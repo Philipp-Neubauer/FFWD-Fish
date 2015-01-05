@@ -18,4 +18,3 @@ Do: ```git diff-tree -p gh-pages``` to see changes.
 Then, merge them into ```_site```: 
 ```git checkout master```
 ```git merge --squash -s subtree --no-commit gh-pages```
-
