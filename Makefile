@@ -17,4 +17,4 @@ site/pages/%.html:site/pages/%.rmd
 	cd $(@D); echo $(<F); Rscript -e 'require("rmarkdown"); rmarkdown::render("$(<F)")'
 
 deploy:
-	git subtree push --prefix _site origin gh_pages
+	git subtree push --prefix _site origin gh-pages
