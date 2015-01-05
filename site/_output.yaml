@@ -1,0 +1,8 @@
+html_document:
+  lib_dir: libs
+  theme: null
+  css: assets/style.css
+  includes:
+    in_header: include/header.html
+    before_body: include/menu.html
+  self_contained: false
