@@ -1,5 +1,5 @@
 
-SITE_DIR=_site
+SITE_DIR = _site
 HTML = $(addsuffix .html, $(basename $(shell find site/pages -iname "*.rmd")))
 
 all:
@@ -7,11 +7,11 @@ all:
 	make deploy
 
 site: $(HTML) $(SITE_DIR) site/assets/**/*
-	cp -r site/assets $(HTML) $(SITE_DIR)
+	rsync -r -u -v site/assets $(HTML) $(SITE_DIR)
 	
 
 $(SITE_DIR):
-	rm -r _site; mkdir -p $(SITE_DIR)
+	mkdir -p $(SITE_DIR)
 
 site/pages/%.html:site/pages/%.rmd
 	cd $(@D); echo $(<F); Rscript -e 'require("rmarkdown"); rmarkdown::render("$(<F)")'
