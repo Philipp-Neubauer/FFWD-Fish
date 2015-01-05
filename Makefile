@@ -6,14 +6,14 @@ all:
 	make site
 	make deploy
 
-site: $(HTML) $(SITE_DIR) site/assets/**/*
+site: $(HTML) $(SITE_DIR) site/assets/**/* 
 	rsync -r -u -v site/assets $(HTML) $(SITE_DIR)
 	
 
 $(SITE_DIR):
 	mkdir -p $(SITE_DIR)
 
-site/pages/%.html:site/pages/%.rmd
+site/pages/%.html:site/pages/%.rmd site/include/*.*
 	cd $(@D); echo $(<F); Rscript -e 'require("rmarkdown"); rmarkdown::render("$(<F)")'
 
 deploy:
