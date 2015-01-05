@@ -1,0 +1,17 @@
+import url("assets/dragonfly.css")
+
+body {
+  padding: 100px 20px;
+}
+
+.centered-navigation .logo {
+    height: 5.4375em;
+    /* HACK - not sure why this 1 px is needed - may fail in other contexts */
+    width: 5.9375em;
+    position: absolute;
+    left: 0;
+    background: url("/images/logo.jpg");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    z-index: 1000; }
