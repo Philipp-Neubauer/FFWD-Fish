@@ -6,7 +6,7 @@ before_install:
   - ./travis-tool.sh bootstrap
 install:
   - ./travis-tool.sh install_deps
-script: ../make site
+script: make site
 
 after_failure:
   - ./travis-tool.sh dump_logs
