@@ -1,8 +1,0 @@
----
-title: "Fast-Forward Fish"
-output:
-  html_document:
-    highlight: pygments
----
-
-![hm](images/bg.jpg)

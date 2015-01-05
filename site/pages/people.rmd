@@ -1,0 +1,6 @@
+---
+title: "People"
+output: html_document
+---
+
+Contributors

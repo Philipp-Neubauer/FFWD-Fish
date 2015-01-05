@@ -313,6 +313,8 @@ body {
       background: #CF4547; }
     .centered-navigation .centered-navigation-wrapper[data-section=publications] {
       background: #EB7A59; }
+      .centered-navigation .centered-navigation-wrapper[data-section=maps] {
+      background: #EB7A59; }
     .centered-navigation .centered-navigation-wrapper[data-section=people] {
       background: #5AB18C; } }
   .centered-navigation ul.centered-navigation-menu {
