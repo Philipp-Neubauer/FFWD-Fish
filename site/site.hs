@@ -7,7 +7,7 @@ import           Hakyll
 --------------------------------------------------------------------------------
 main :: IO ()
 main = hakyll $ do
-    match "images/*" $ do
+    match ("images/*" .||. "posts/**/*.png") $ do
         route   idRoute
         compile copyFileCompiler
 
@@ -35,7 +35,7 @@ main = hakyll $ do
     create ["archive.html"] $ do
         route idRoute
         compile $ do
-            posts <- recentFirst =<< loadAll "posts/*"
+            posts <- recentFirst =<< loadAll "posts/*.md"
             let archiveCtx =
                     listField "posts" postCtx (return posts) `mappend`
                     constField "title" "Archives"            `mappend`
@@ -50,7 +50,7 @@ main = hakyll $ do
     match "index.html" $ do
         route idRoute
         compile $ do
-            posts <- recentFirst =<< loadAll "posts/*"
+            posts <- recentFirst =<< loadAll "posts/*.md"
             let indexCtx =
                     listField "posts" postCtx (return posts) `mappend`
                     defaultContext
@@ -75,3 +75,4 @@ sassCompiler = loadBody (fromFilePath "stylesheets/ffwd-fish.scss")
     >>= makeItem
     >>= withItemBody (unixFilter "scss" ["-s", "-C", "-I", "stylesheets"])
     >>= return . fmap compressCss
+
