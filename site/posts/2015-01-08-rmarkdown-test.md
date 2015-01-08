@@ -1,6 +1,6 @@
 # Mizer playtime
-Philipp Neubauer
-06/01/2015
+Philipp Neubauer  
+06/01/2015  
 
 Finally, underway, the website halfway up and passing Travis-CI; time to get this MArsden research rolling!
 
@@ -13,4 +13,4 @@ Had a quick look at the [source](https://github.com/Philipp-Neubauer/mizer/tree/
 plot(1:100,rnorm(100))
 ```
 
-![](2015-01-08-rmarkdown-test_files/figure-html/unnamed-chunk-1-1.png)
+![](2015-01-08-rmarkdown-test_files/figure-html/unnamed-chunk-1-1.png) 
