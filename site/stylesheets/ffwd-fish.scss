@@ -3,3 +3,14 @@
 @import "bourbon/bourbon";
 @import "base/base";
 @import "neat/neat";
+
+@import "navigation";
+@import "hero";
+
+body {
+    margin: 0;
+}
+
+.container {
+    @include outer-container;
+}
