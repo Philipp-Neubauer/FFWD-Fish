@@ -16,7 +16,7 @@ On Ubuntu ```apt-get install ghc cabal-install``` and on a mac
 cabal update
 cd site
 cabal sandbox init  # if you are on ubuntu you may have to skip this step
-cabal install --only-dependencies
+cabal install --only-dependencies hakyll
 ```
 
 ### Ruby part
