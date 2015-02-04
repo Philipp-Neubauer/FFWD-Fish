@@ -1,5 +1,7 @@
 # FFWD-Fish
 
+[![Build Status](https://travis-ci.org/Philipp-Neubauer/FFWD-Fish.svg?branch=master)](https://travis-ci.org/Philipp-Neubauer/FFWD-Fish)
+
 Future Fisheries under climate change
 
 ## Building the site
