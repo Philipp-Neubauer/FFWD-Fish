@@ -2,4 +2,4 @@
 title: About
 ---
 
-This is a Marsden Fund project.
+This project is funded by the Marsden fund, grant no. DFG-14-001.
