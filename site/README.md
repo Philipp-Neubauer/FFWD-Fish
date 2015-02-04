@@ -1,16 +1,33 @@
-Website
-========
+# FFWD-Fish
 
-[![Build Status](https://travis-ci.org/Philipp-Neubauer/FFWD-Fish.svg?branch=master)](https://travis-ci.org/Philipp-Neubauer/FFWD-Fish)
+Future Fisheries under climate change
 
-This directory hosts files for the FFWD.fish website. The website is built from rmarkdown (.rnw) with custom css by [Chris Knox](https://github.com/vizowl) and myself.
+## Building the site
 
-Build
------
+This site requires haskell, ruby and R to build.
 
-```make build``` in ../
+### Haskell part
 
-Deploy
-------
+On Ubuntu ```apt-get install ghc cabal-install``` and on a mac
+(assuming you have [homebrew](http://brew.sh/))
+```brew install ghc cabal-install```. Then run:
 
-Deployment to gh-pages branch on github via ```make deploy``` in ../
+```
+cabal update
+cd site
+cabal sandbox init  # if you are on ubuntu you may have to skip this step
+cabal install --only-dependencies hakyll
+```
+
+### Ruby part
+
+Assuming you have ruby installed run
+
+```
+gem install sass
+```
+
+### R part
+
+Assuming you have R installed start the R interpreter and run ```install.packages('rmarkdown')```
+

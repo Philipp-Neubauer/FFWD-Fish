@@ -1,7 +1,0 @@
----
-title: "Fast-Forward Fish"
-output:
-  html_document
----
-
-![hm](./assets/images/bg.jpg)
