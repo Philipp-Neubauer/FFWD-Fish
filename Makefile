@@ -8,6 +8,6 @@ deploy: .docker
 	git push origin gh-pages
 	git checkout master
 	
-.docker: site.hs
+.docker: site/site.hs
 	docker build -t "vizowl/ffwd-fish" site
 	touch $@
