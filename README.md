@@ -1,20 +1,35 @@
-FFWD-Fish
-=========
+# FFWD-Fish
+
+[![Build Status](https://travis-ci.org/Philipp-Neubauer/FFWD-Fish.svg?branch=master)](https://travis-ci.org/Philipp-Neubauer/FFWD-Fish)
 
 Future Fisheries under climate change
 
+## Building the site
 
-Notes on deploying _site
-------------------------
+This site requires haskell, ruby and R to build.
 
-If deployment fails, it's probably due to remote changes in the gh-pages branch that need to be pulled into the master ```_site``` before it can be pushed to github. To fix this, a note to self: the ```_site``` directory is a subtree merge from the gh-pages branch, like so:
-```git read-tree --prefix=_site/ -u gh-pages```
+### Haskell part
 
-To pull in manual changes (say, made on github), to _site before re-deploying, do:
-```git checkout gh-pages''' and ```git pull```. Of course.
+On Ubuntu ```apt-get install ghc cabal-install``` and on a mac
+(assuming you have [homebrew](http://brew.sh/))
+```brew install ghc cabal-install```. Then run:
 
-Do: ```git diff-tree -p gh-pages``` to see changes.
+```
+cabal update
+cd site
+cabal sandbox init  # if you are on ubuntu you may have to skip this step
+cabal install --only-dependencies hakyll
+```
 
-Then, merge them into ```_site```: 
-```git checkout master```
-```git merge --squash -s subtree --no-commit gh-pages```
+### Ruby part
+
+Assuming you have ruby installed run
+
+```
+gem install sass
+```
+
+### R part
+
+Assuming you have R installed start the R interpreter and run ```install.packages('rmarkdown')```
+
