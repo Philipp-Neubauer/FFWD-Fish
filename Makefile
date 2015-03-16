@@ -25,4 +25,3 @@ deps/%/.docker: deps/%/Dockerfile deps/%/*
 site/posts/%.md: site/posts/%.rmd deps/siter/.docker
 	docker run --rm -u $$(id -u):$$(id -g) -v $$PWD/site/posts:/work \
 		-w /work ffwdfish/siter Rscript -e 'require("rmarkdown"); rmarkdown::render("$(<F)")'
-

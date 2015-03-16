@@ -11,3 +11,6 @@
 .Rproj.user/
 .Rproj.user
 .docker
+cabal.sandbox.config
+.cabal-sandbox
+deps/sitehakyll/dist
