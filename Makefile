@@ -14,9 +14,10 @@ deploy:
 	echo "hello"
 
 deps/%/.docker: deps/%/Dockerfile deps/%/*
-	docker build -t "ffwd-fish/$*"
+	docker build -t "ffwd-fish/$*" deps/$*
 	touch $@
 
 site/posts/%.md: site/posts/%.rmd deps/siter/.docker
-	cd $(@D); echo $(<F); docker run --rm -u $$(id -u):$$(id -g) -v $$PWD/site:/site -w /site ffwd-fish/siter Rscript -e 'require("rmarkdown"); rmarkdown::render("$(<F)")'
+	docker run --rm -u $$(id -u):$$(id -g) -v $$PWD/site/posts:/work \
+		-w /work ffwd-fish/siter Rscript -e 'require("rmarkdown"); rmarkdown::render("$(<F)")'
 
