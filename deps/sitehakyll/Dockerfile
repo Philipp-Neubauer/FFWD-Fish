@@ -12,6 +12,8 @@ RUN gem install sass
 
 EXPOSE 8000
 
-COPY site.hs ffwd-fish-site.cabal /build/
+COPY ffwd-fish-site.cabal /build/
+RUN cabal update && cd /build && cabal install --only-dependencies --global && rm -r /root/.cabal
 
-RUN cabal update && cd /build && cabal install --global
+COPY site.hs /build/
+RUN cd /build && cabal install --global
