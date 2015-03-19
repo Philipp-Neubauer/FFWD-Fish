@@ -13,7 +13,7 @@ header.navigation {
   //////////////////////////////////////////////////////////////////////////////////
 
   $navigation-padding: 1em;
-  $navigation-background: $color-primary-3;
+  $navigation-background: $color-primary-2;
   $navigation-color: transparentize(white, 0.3);
   $navigation-color-hover: white;
   $navigation-height: 60px;
@@ -115,6 +115,7 @@ header.navigation {
     overflow: hidden;
     padding-right: .8em;
     text-align: right;
+    font-size: $h4-font-size;
     width: 100%;
     z-index: 9999;
 
@@ -129,7 +130,7 @@ header.navigation {
     a {
       color: $navigation-color;
       display: inline-block;
-      font-weight: 400;
+      font-weight: 800;
 
       @include media ($horizontal-bar-mode) {
         padding-right: 1em;
