@@ -13,7 +13,7 @@ watch: $(RMARKEDDOWN) deps/sitehakyll/.docker
 deploy: ../FFWD-Fish-gh-pages build
 ifeq (refs/heads/gh-pages,$(shell cd ../FFWD-Fish-gh-pages && git symbolic-ref HEAD))
 	cp -r site/_site/* $<
-	$(if $(shell cd $< && git diff),cd $< && git add -A && git commit -amdeploy && git push)
+	$(if $(shell cd $< && git add -N && git diff),cd $< && git add -A && git commit -amdeploy && git push)
 else
 	$(error Not deploying because $< does not exist or does not have gh-pages checked out)
 endif
