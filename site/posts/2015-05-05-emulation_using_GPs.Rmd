@@ -1,0 +1,396 @@
+---
+title: "Getting started: emulating size-based models"
+author: "Philipp Neubauer"
+date: "13/05/2015"
+bibliography: "include/GP_emulators/History_match.bib"
+---
+
+```{r echo=F,message=F}
+library("knitcitations")
+cleanbib()
+options("citation_format" = "pandoc")
+bib = read.bibtex('include/GP_emulators/History_match.bib')
+```
+
+Finally, underway, the website halfway up; time to get this Marsden research rolling!
+
+Starting with mizer to get a community model up and running, see if I can emulate it using Gaussian processes. I'll closely follow `r citet(bib[["andrianakis_bayesian_2015"]])` in this first try.
+
+```{r}
+require("mizer")
+require("parallel")
+
+truth <- set_community_model(max_w = 1e+06, min_w = 0.001,r_pp=10,
+                    z0 = 0.1, alpha = 0.2, h = 10, beta = 100, sigma = 2,
+                    q = 0.8, n = 0.8, kappa = 10000,
+                    f0 = 0.7,  gamma = NA,
+                    knife_edge_size = 1000)
+
+sim <- project(truth, effort = 0, t_max = 20, dt=0.1)
+plot(sim)
+
+data <- getCommunitySlope(sim)[20,]
+```
+Now define a hypercube to sample from and calibrate the Gaussian process that will (hopefully!) emulate the size spectrum outputs.
+
+```{r}
+#Set prior search space
+cube=6
+dims=4
+
+n=seq(2/3,0.9,l=cube)
+q=seq(0.4,1,l=cube)
+h = seq(3,20,l=cube)
+beta = seq(50,1000,l=cube)
+
+# do this in parallel
+sim_data <- vector('list',cube^4)
+a=0
+# run hypercube
+for(ns in n){
+  for (qs in q){
+    for (hs in h){
+      for (bs in beta){
+        a=a+1
+        sim_data[[a]] <- c(ns,qs,hs,bs)
+      }
+    }
+  }
+}
+
+simdat <- parallel::mclapply(sim_data, function(x) {
+  truth <- set_community_model(max_w = 1e+06, min_w = 0.001,
+                                     z0 = 0.1, alpha = 0.2, h = x[3],
+                                     beta = x[4], sigma = 2,
+                                     q = x[2], n = x[1], kappa = 10000,
+                                     f0 = 0.7, r_pp = 10, gamma = NA,
+                                     knife_edge_size = 1000)
+
+  sim <- project(truth, effort = 0, t_max = 10, dt=0.1)
+  as.matrix(getCommunitySlope(sim)[10,])
+}, mc.cores=4)
+
+simdat <- do.call('rbind',simdat)
+
+```
+So far so good, with those simulation in our pocket, we can go to the emulation part:
+
+```{r}
+require("dplyr")
+
+inputs <- do.call('rbind',sim_data)
+outputs1 <- simdat[,1]
+outputs2 <- simdat[,2]
+
+```
+Following A et al. 2015 - estimate the length scale from data. Simulated annealing seems to work best here as the surface in 4 dimensions is multimodal and other optim choices get stuck in suboptimal modes. Wonder if there's better alternatives (besides MCMC or numerical integration, which seem to defeat the purpose.)
+
+```{r}
+require(emulator)
+pars_w1_o1 <- optimal.scales(val=inputs, rep(10,4), as.matrix(outputs1),method="SANN",control=list(trace=TRUE,REPORT=10,maxit = 200,reltol=0.001))
+pars_w1_o2 <- optimal.scales(val=inputs, rep(10,4), as.matrix(outputs2),method="SANN",control=list(trace=TRUE,REPORT=10,maxit = 200,reltol=0.001))
+
+A_w1_o1 = corr.matrix(inputs,scales=pars_w1_o1);
+Ainv_w1_o1 <- solve(A_w1_o1)
+
+A_w1_o2 = corr.matrix(inputs,scales=pars_w1_o2);
+Ainv_w1_o2 <- solve(A_w1_o2)
+
+```
+
+Next, need to predict to a whole lot of points and calculate implausibility:
+
+```{r}
+cube_pred <- 10
+
+preds <- data.frame(n=seq(2/3,0.9,l=cube_pred),
+           q=seq(0.2,1,l=cube_pred),
+           h = seq(3,20,l=cube_pred),
+           beta = seq(50,1000,l=cube_pred))
+
+predicts <- vector('list',cube_pred^4)
+a=0
+for(ns in preds$n){
+  for (qs in preds$q){
+    for (hs in preds$h){
+      for (bs in preds$beta){
+        a=a+1
+        predicts[[a]] <- c(ns,qs,hs,bs)
+      }
+    }
+  }
+}
+   
+predmu_w1_o1 <- parallel::mclapply(predicts,interpolant, outputs1, as.matrix(inputs),A=A_w1_o1,Ainv=Ainv_w1_o1,scales=pars_w1_o1,g=TRUE,mc.cores=4)
+predmu_w1_o2 <- parallel::mclapply(predicts,interpolant, outputs2, as.matrix(inputs),A=A_w1_o1,Ainv=Ainv_w1_o1,scales=pars_w1_o2,g=TRUE,mc.cores=4)
+
+predvar_w1_o1 <- unlist(lapply(predmu_w1_o1,function(x) x$Z))
+pred_w1_o1 <- unlist(lapply(predmu_w1_o1,function(x) x$mstar.star))
+
+predvar_w1_o2 <- unlist(lapply(predmu_w1_o2,function(x) x$Z))
+pred_w1_o2 <- unlist(lapply(predmu_w1_o2,function(x) x$mstar.star))
+      
+pn <- cbind(pred_w1_o1,pred_w1_o2)
+mse <- cbind(predvar_w1_o1,predvar_w1_o2)^2
+modelvar <- c(0.1*var(outputs1),0.1*var(outputs2))
+
+predictn <- data.frame(do.call('rbind',predicts))
+
+predictn$impl <- sapply(1:nrow(pn),function(x){ 
+  imp <- as.matrix(data[,c('slope','intercept')] - pn[x,]) %*% solve(diag(mse[x,]+modelvar)) %*% t(as.matrix(data[,c('slope','intercept')] - pn[x,]))
+  return(imp)
+})
+
+colnames(predictn) <- c('n','q','h','beta','Implausibility')
+
+require(ggplot2)
+
+ggplot(predictn,aes(x=n,y=q,z=Implausibility)) + stat_summary2d(fun = function(x) mean(x>3))
+
+keepers <- predictn %>% filter(Implausibility<3) %>% select(-Implausibility)
+```
+
+Now draw from MYN distribution around keepers (or subset thereof), choose variance to have ~ 20% rejected
+
+```{r}
+repmat = function(X,m,n){
+##R equivalent of repmat (matlab)
+  X<- as.matrix(X)
+  mx = dim(X)[1]
+  nx = dim(X)[2]
+  matrix(t(matrix(X,mx,nx*n)),mx*m,nx*n,byrow=T)
+}
+
+#draw 20 points at each keeper
+new_points_sim <- t(apply(repmat(keepers,20,1),1,function(x) t(mvtnorm::rmvnorm(1,x,diag(rep(0.05*isd))))))
+
+apply.range <- apply(sapply(1:d,function(x) new_points_sim[,x]>range(preds[,x])[1] & new_points_sim[,x]<range(preds[,x])[2]),1,all)
+
+new_points_sim <- new_points_sim[apply.range,]
+
+ss <- sample(1:nrow(new_points_sim),1000,replace = F)
+new_points_sim_sub <- new_points_sim[ss,]
+
+new_points_sim_list <- split(new_points_sim,1:nrow(new_points_sim))
+
+predmu_w1test_o1 <- parallel::mclapply(new_points_sim_list,interpolant, outputs1, as.matrix(inputs),A=A_w1_o1,Ainv=Ainv_w1_o1,scales=pars_w1_o1,g=TRUE,mc.cores=4)
+predmu_w1test_o2 <- parallel::mclapply(new_points_sim_list,interpolant, outputs2, as.matrix(inputs),A=A_w1_o1,Ainv=Ainv_w1_o1,scales=pars_w2_o1,g=TRUE,mc.cores=4)
+
+predvar_w1test_o1 <- unlist(lapply(predmu_w1test_o1,function(x) x$Z))
+pred_w1test_o1 <- unlist(lapply(predmu_w1test_o1,function(x) x$mstar.star))
+
+predvar_w1test_o2 <- unlist(lapply(predmu_w1test_o2,function(x) x$Z))
+pred_w1test_o2 <- unlist(lapply(predmu_w1test_o2,function(x) x$mstar.star))
+        
+pn <- cbind(pred_w1test_o1,pred_w1test_o2)
+mse <- cbind(predvar_w1test_o1,predvar_w1test_o2)^2
+modelvar <- c(0.1*var(outputs1),0.1*var(outputs2))
+
+test_impl <- sapply(1:nrow(pn),function(x){ 
+  imp <- as.matrix(data[,c('slope','intercept')] - pn[x,]) %*% solve(diag(mse[x,]+modelvar)) %*% t(as.matrix(data[,c('slope','intercept')] - pn[x,]))
+  return(imp)
+})
+
+
+mean(test_impl>3)
+```
+
+About `r round(mean(test_impl>3))` percent rejected at this try. Now re-run simulator and GP for the next wave...
+
+Wave 2
+========
+
+```{r}
+        
+new_points_sim_sub_list <- split(new_points_sim_sub,1:nrow(new_points_sim_sub))
+
+sim_data_w2 <- mclapply(new_points_sim_sub_list,function(x){
+  truth <- set_community_model(max_w = 1e+06, min_w = 0.001,
+                               z0 = 0.1, alpha = 0.2, h = x[3],
+                               beta = x[4], sigma = 2,
+                               q = x[2], n = x[1], kappa = 10000,
+                               f0 = 0.7, r_pp = 10, gamma = NA,
+                               knife_edge_size = 1000)
+  
+  sim <- project(truth, effort = 0, t_max = 10, dt=0.1)
+  sims <- as.matrix(getCommunitySlope(sim)[10,])
+  return(sims)
+},mc.cores=4)
+
+w2_data <- do.call('rbind',sim_data_w2)
+outputs1_w2 <- w2_data[,1]
+outputs2_w2 <- w2_data[,2]  
+
+
+pars_w2_o1 <- optimal.scales(val=new_points_sim_sub, pars_w1_o1, as.matrix(outputs1_w2),method="SANN",control=list(trace=TRUE,REPORT=10,maxit = 200,reltol=0.001))
+pars_w2_o2 <- optimal.scales(val=new_points_sim_sub, pars_w1_o2, as.matrix(outputs2_w2),method="SANN",control=list(trace=TRUE,REPORT=10,maxit = 200,reltol=0.001))
+
+A_w2_o1 = corr.matrix(new_points_sim_sub,scales=pars_w2_o1);
+Ainv_w2_o1 <- solve(A_w2_o1)
+
+A_w2_o2 = corr.matrix(new_points_sim_sub,scales=pars_w2_o2);
+Ainv_w2_o2 <- solve(A_w2_o2)
+
+```
+
+I can now use the ```new_points_sim``` object from above to use reasonable values to do predictions
+
+```{r}
+
+new_points_sim_list <- split(new_points_sim[-ss,],1:nrow(new_points_sim[-ss,]))
+
+predmu_w2_o1 <- parallel::mclapply(new_points_sim_list,interpolant, outputs1_w2, new_points_sim_sub,A=A_w2_o1,Ainv=Ainv_w2_o1,scales=pars_w2_o1,g=TRUE,mc.cores=4)
+predmu_w2_o2 <- parallel::mclapply(new_points_sim_list,interpolant, outputs2_w2, new_points_sim_sub,A=A_w2_o1,Ainv=Ainv_w2_o1,scales=pars_w2_o2,g=TRUE,mc.cores=4)
+
+predvar_w2_o1 <- unlist(lapply(predmu_w2_o1,function(x) x$Z))
+pred_w2_o1 <- unlist(lapply(predmu_w2_o1,function(x) x$mstar.star))
+
+predvar_w2_o2 <- unlist(lapply(predmu_w2_o2,function(x) x$Z))
+pred_w2_o2 <- unlist(lapply(predmu_w2_o2,function(x) x$mstar.star))
+        
+pn <- cbind(pred_w2_o1,pred_w2_o2)
+mse <- cbind(predvar_w2_o1,predvar_w2_o2)^2
+modelvar <- c(0.1*var(outputs1_w2),0.1*var(outputs2_w2))
+
+predictn <- data.frame(do.call('rbind',new_points_sim_list))
+
+predictn$impl <- sapply(1:nrow(pn),function(x){ 
+  imp <- as.matrix(data[,c('slope','intercept')] - pn[x,]) %*% solve(diag(mse[x,]+modelvar)) %*% t(as.matrix(data[,c('slope','intercept')] - pn[x,]))
+  return(imp)
+})
+
+colnames(predictn) <- c('n','q','h','beta','Implausibility')
+
+require(ggplot2)
+
+ggplot(predictn,aes(x=n,y=q,z=Implausibility)) + stat_summary2d(fun = function(x) mean(x>3))
+
+ggplot(predictn,aes(x=n,y=beta,z=Implausibility)) + stat_summary2d(fun = function(x) mean(x>3))
+
+hist(keepers$n)
+hist(keepers$q)
+hist(keepers$beta)
+
+keepers <- predictn %>% filter(Implausibility<3) %>% select(-Implausibility)
+```
+
+
+```{r}
+new_points_sim_w2 <- t(apply(repmat(keepers,20,1),1,function(x) t(mvtnorm::rmvnorm(1,x,diag(0.05*apply(keepers,2,sd))))))
+
+apply.range <- apply(sapply(1:d,function(x) new_points_sim_w2[,x]>range(preds[,x])[1] & new_points_sim_w2[,x]<range(preds[,x])[2]),1,all)
+
+new_points_sim_w2 <- new_points_sim_w2[apply.range,]
+
+ss <- sample(1:nrow(new_points_sim_w2),1000,replace = F)
+new_points_sim_sub_w2 <- new_points_sim_w2[ss,]
+
+new_points_sim_list_w2 <- split(new_points_sim_w2,1:nrow(new_points_sim_w2))
+
+predmu_w2test_o1 <- parallel::mclapply(new_points_sim_list_w2,interpolant, outputs1_w2, new_points_sim_sub,A=A_w2_o1,Ainv=Ainv_w2_o1,scales=pars_w2_o1,g=TRUE,mc.cores=4)
+predmu_w2test_o2 <- parallel::mclapply(new_points_sim_list_w2,interpolant, outputs2_w2, new_points_sim_sub,A=A_w2_o1,Ainv=Ainv_w2_o1,scales=pars_w2_o1,g=TRUE,mc.cores=4)
+
+predvar_w2test_o1 <- unlist(lapply(predmu_w2test_o1,function(x) x$Z))
+pred_w2test_o1 <- unlist(lapply(predmu_w2test_o1,function(x) x$mstar.star))
+
+predvar_w2test_o2 <- unlist(lapply(predmu_w2test_o2,function(x) x$Z))
+pred_w2test_o2 <- unlist(lapply(predmu_w2test_o2,function(x) x$mstar.star))
+        
+pn <- cbind(pred_w2test_o1,pred_w2test_o2)
+mse <- cbind(predvar_w2test_o1,predvar_w2test_o2)^2
+modelvar <- c(0.1*var(outputs1),0.1*var(outputs2))
+
+test_impl <- sapply(1:nrow(pn),function(x){ 
+  imp <- as.matrix(data[,c('slope','intercept')] - pn[x,]) %*% solve(diag(mse[x,]+modelvar)) %*% t(as.matrix(data[,c('slope','intercept')] - pn[x,]))
+  return(imp)
+})
+
+
+mean(test_impl>3)
+```
+
+This looks good, about `r round(mean(test_impl>3))` percent rejected at this try. Again, re-run simulator and GP for the next wave...
+
+Wave 3
+========
+
+```{r}
+        
+new_points_sim_sub_list_w3 <- split(new_points_sim_sub_w2 ,1:nrow(new_points_sim_sub_w2 ))
+new_points_sim_sub_w3 <- new_points_sim_sub_w2
+
+sim_data_w3 <- mclapply(new_points_sim_sub_list_w2,function(x){
+  truth <- set_community_model(max_w = 1e+06, min_w = 0.001,
+                               z0 = 0.1, alpha = 0.2, h = x[3],
+                               beta = x[4], sigma = 2,
+                               q = x[2], n = x[1], kappa = 10000,
+                               f0 = 0.7, r_pp = 10, gamma = NA,
+                               knife_edge_size = 1000)
+  
+  sim <- project(truth, effort = 0, t_max = 10, dt=0.1)
+  sims <- as.matrix(getCommunitySlope(sim)[10,])
+  return(sims)
+}, mc.cores = 4)
+
+w3_data <- do.call('rbind',sim_data_w3)
+outputs1_w3 <- w3_data[,1]
+outputs2_w3 <- w3_data[,2]  
+
+
+pars_w3_o1 <- optimal.scales(val=new_points_sim_sub_w3, pars_w2_o1, as.matrix(outputs1_w3),method="SANN",control=list(trace=TRUE,REPORT=10,maxit = 200,reltol=0.001))
+pars_w3_o2 <- optimal.scales(val=new_points_sim_sub_w3, pars_w2_o2, as.matrix(outputs2_w3),method="SANN",control=list(trace=TRUE,REPORT=10,maxit = 200,reltol=0.001))
+
+A_w3_o1 = corr.matrix(new_points_sim_sub,scales=pars_w3_o1);
+Ainv_w3_o1 <- solve(A_w3_o1)
+
+A_w3_o2 = corr.matrix(new_points_sim_sub,scales=pars_w3_o2);
+Ainv_w3_o2 <- solve(A_w3_o2)
+
+```
+
+Again,  use the ```new_points_sim``` object from above to use reasonable values to do predictions
+
+```{r}
+
+new_points_sim_list_w3 <- new_points_sim_list_w2[-ss]
+
+predmu_w3_o1 <- parallel::mclapply(new_points_sim_list_w3,interpolant, outputs1_w3, new_points_sim_sub,A=A_w3_o1,Ainv=Ainv_w3_o1,scales=pars_w3_o1,g=TRUE,mc.cores=4)
+predmu_w3_o2 <- parallel::mclapply(new_points_sim_list_w3,interpolant, outputs2_w3, new_points_sim_sub,A=A_w3_o1,Ainv=Ainv_w3_o1,scales=pars_w3_o2,g=TRUE,mc.cores=4)
+
+predvar_w3_o1 <- unlist(lapply(predmu_w3_o1,function(x) x$Z))
+pred_w3_o1 <- unlist(lapply(predmu_w3_o1,function(x) x$mstar.star))
+
+predvar_w3_o2 <- unlist(lapply(predmu_w3_o2,function(x) x$Z))
+pred_w3_o2 <- unlist(lapply(predmu_w3_o2,function(x) x$mstar.star))
+        
+pn <- cbind(pred_w3_o1,pred_w3_o2)
+mse <- cbind(predvar_w3_o1,predvar_w3_o2)^2
+modelvar <- c(0.1*var(outputs1_w3),0.1*var(outputs2_w3))
+
+predictn <- data.frame(do.call('rbind',new_points_sim_list_w3))
+
+predictn$impl <- sapply(1:nrow(pn),function(x){ 
+  imp <- as.matrix(data[,c('slope','intercept')] - pn[x,]) %*% solve(diag(mse[x,]+modelvar)) %*% t(as.matrix(data[,c('slope','intercept')] - pn[x,]))
+  return(imp)
+})
+
+
+
+colnames(predictn) <- c('n','q','h','beta','Implausibility')
+
+require(ggplot2)
+
+ggplot(predictn,aes(x=n,y=q,z=Implausibility)) + stat_summary2d(fun = function(x) mean(x>3))
+
+ggplot(predictn,aes(x=n,y=beta,z=Implausibility)) + stat_summary2d(fun = function(x) mean(x>3))
+ggplot(predictn,aes(x=h,y=beta,z=Implausibility)) + stat_summary2d(fun = function(x) mean(x>3))
+
+
+keepers <- predictn %>% filter(Implausibility<3) %>% select(-Implausibility)
+
+```
+Looks like there isn't much more to be gained here.
+
+```{r echo=F,message=F}
+write.bibtex(file="include/GP_emulators/HM_community_model.bib")
+```
