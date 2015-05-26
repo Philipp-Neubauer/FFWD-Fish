@@ -1,0 +1,484 @@
+---
+title: "Changing productivity in trait based models"
+author: "Philipp Neubauer"
+date: "19/05/2015"
+bibliography: "include/GP_emulators/History_match.bib"
+---
+
+```{r echo=F,message=F,results='hide'}
+require("mizer")
+require("parallel")
+require("ggplot2")
+require(dplyr)
+require(knitr)
+opts_chunk$set(cache=TRUE)
+
+```
+
+Change only carrying capacity:
+
+```{r no fishing with changing CC}
+# traits
+nsp <- 12
+
+params <- set_trait_model(no_sp = nsp, 
+                          min_w_inf = 10, 
+                          max_w_inf = 5e5,
+                          n=3/4,
+                          kappa = 0.0035,
+                          w_pp_cutoff=50,
+                          gear_names = as.character(1:nsp),
+                          )
+
+params@species_params$erepro <- 0.1
+
+paramsl <- set_trait_model(no_sp = nsp, 
+                          min_w_inf = 10, 
+                          max_w_inf = 5e5,
+                          kappa = 0.002,
+                          n=3/4,
+                          gear_names = as.character(1:nsp),
+                          w_pp_cutoff=50)
+
+paramsl@search_vol <- params@search_vol
+paramsl@species_params$gamma <- params@species_params$gamma
+paramsl@species_params$erepro <- 0.1
+
+paramsh <- set_trait_model(no_sp = nsp, 
+                          min_w_inf = 10, 
+                          max_w_inf = 5e5,
+                          kappa = 0.005,
+                          n=3/4,
+                          gear_names = as.character(1:nsp),
+                          w_pp_cutoff=50)
+
+paramsh@search_vol <- params@search_vol
+paramsh@species_params$gamma <- params@species_params$gamma
+paramsh@species_params$erepro <- 0.1
+
+paramsh2 <- set_trait_model(no_sp = nsp, 
+                          min_w_inf = 10, 
+                          max_w_inf = 5e5,
+                          kappa = 0.01,
+                          n=3/4,
+                          gear_names = as.character(1:nsp),
+                          w_pp_cutoff=50)
+
+paramsh2@search_vol <- params@search_vol
+paramsh2@species_params$gamma <- params@species_params$gamma
+paramsh2@species_params$erepro <- 0.1
+
+sim <- project(params, t_max=75, effort = 0)
+siml <- project(paramsl, t_max=75, effort = 0)
+simh <- project(paramsh, t_max=75, effort = 0)
+simh2 <- project(paramsh2, t_max=75, effort = 0)
+
+hmm <- paramsl@w>1
+
+N <- apply(sim@n,3,rowSums)[76,hmm]
+Nl <- apply(siml@n,3,rowSums)[76,hmm]
+Nh <- apply(simh@n,3,rowSums)[76,hmm]
+Nh2 <- apply(simh2@n,3,rowSums)[76,hmm]
+
+sims <- data.frame(Capacity=rep(c('base case','low','high','higher'),e=sum(hmm)),
+                   N=c(N,Nl,Nh,Nh2),
+                   w=rep(params@w[hmm],4))
+
+require(ggplot2)
+ggplot(sims) + 
+  geom_line(aes(x=w,y=N*w^2,col=Capacity))+
+  scale_x_log10()+
+  scale_y_log10()+
+  xlab('weight (g)')+
+  theme_classic()
+
+```
+
+It appears as though the higher carrying capacity scenarios don't really change the picture much other than increasing abundance along the size spectrum. It also induces larger "fluctuations" at the large end of the spectrum. Lowering the carrying capacity leads to a crash of large species in these simulations.
+
+Next, I inspect how the density dependence in recruitment changes as a function of carrying capacity.
+
+```{r inspect dd}
+
+dd <- (sim@rdi/sim@rdd)[76,]
+ddl <- (siml@rdi/siml@rdd)[76,]
+ddh <- (simh@rdi/simh@rdd)[76,]
+ddh2 <- (simh2@rdi/simh2@rdd)[76,]
+
+dd_sims <- data.frame(Capacity=rep(c('base case','low','high','higher'),e=length(dd)),
+                   RelRec=c(dd,ddl,ddh,ddh2),
+                   w=rep(params@species_params$w_inf,4))
+
+
+require(ggplot2)
+ggplot(dd_sims) + 
+  geom_line(aes(x=w,y=RelRec,col=Capacity))+
+  scale_x_log10()+
+  scale_y_log10()+
+  xlab('weight (g)')+
+  theme_classic()
+
+```
+
+Increasing carrying capacity leads to more density dependence in recruitment - not surprisingly perhaps as resources aren't limiting anymore at this stage. For the simulations with low carrying capacity, the relative importance of carrying capacity first increases more substantially than in the high CC scenarios, but then rashes for large size classes that collapsed in the simulations.
+
+The explanation for the collapse of large fish lies in the feeding level, which dips below the critical threshold feeding level for low carrying capacity, and thus leads to an eventual decline in larger fish beyond the affected size:
+
+```{r feeding levels}
+
+spp <- params@species_params
+
+fc <- spp$ks/(spp$h*spp$alpha)
+
+#Feeding levels
+fl_l <- getFeedingLevel(paramsl,siml@n[76,,],siml@n_pp[76,])[12,hmm]
+fl_s <- getFeedingLevel(params,sim@n[76,,],sim@n_pp[76,])[12,hmm]
+fl_h <- getFeedingLevel(paramsh,simh@n[76,,],simh@n_pp[76,])[12,hmm]
+fl_h2 <- getFeedingLevel(paramsh2,simh2@n[76,,],simh2@n_pp[76,])[12,hmm]
+
+fls <- data.frame(Capacity=rep(c('base case','low','high','higher'),e=sum(hmm)),
+                   FeedingLevel=c(fl_s,fl_l,fl_h,fl_h2),
+                   w=rep(params@w[hmm],4))
+
+require(ggplot2)
+ggplot(fls) + 
+  geom_line(aes(x=w,y=FeedingLevel,col=Capacity))+
+  scale_x_log10()+
+  xlab('weight (g)')+
+  theme_classic()+
+  geom_hline(aes(yintercept=fc),linetype=3,size=0.5)
+
+
+```
+
+Since the feeding level at a particular size class depends on the food available for each size class:
+
+$f_i(w) = \frac{\gamma\w^q \phi_i(w)}{\gamma\w^q \phi_i(w) + hw^n}$
+
+and we assume that the exponents and maximum feeding level are fixed, then the food preference seems the first target to explore the generality of the above results:
+
+```{r change beta structure}
+
+# decreasing beta to higher min beta
+paramsl_bh <- set_trait_model(no_sp = nsp, 
+                          min_w_inf = 10, 
+                          max_w_inf = 5e5,
+                          kappa = 0.002,
+                          n=3/4,
+                          beta = 1000/ (seq(1,2,l=12)),
+                          gear_names = as.character(1:nsp),
+                          w_pp_cutoff=50)
+
+# decreasing beta to higher min beta, with lower CC
+paramsl_bh2 <- set_trait_model(no_sp = nsp, 
+                          min_w_inf = 10, 
+                          max_w_inf = 5e5,
+                          kappa = 0.001,
+                          n=3/4,
+                          beta = 1000/ (seq(1,2,l=12)),
+                          gear_names = as.character(1:nsp),
+                          w_pp_cutoff=50)
+
+# decreasing beta to same min beta
+paramsl_bl <- set_trait_model(no_sp = nsp, 
+                          min_w_inf = 10, 
+                          max_w_inf = 5e5,
+                          kappa = 0.002,
+                          n=3/4,
+                          beta = 1000/ (seq(1,10,l=12)),
+                          gear_names = as.character(1:nsp),
+                          w_pp_cutoff=50)
+
+# increasing beta to higher min beta
+paramsl_bi <- set_trait_model(no_sp = nsp, 
+                          min_w_inf = 10, 
+                          max_w_inf = 5e5,
+                          kappa = 0.002,
+                          n=3/4,
+                          beta = rev(1000/ (seq(1,10,l=12))),
+                          gear_names = as.character(1:nsp),
+                          w_pp_cutoff=50)
+
+# increase sigma
+paramsl_bs <- set_trait_model(no_sp = nsp, 
+                          min_w_inf = 10, 
+                          max_w_inf = 5e5,
+                          kappa = 0.002,
+                          n=3/4,
+                          beta = 100,
+                          sigma=2,
+                          gear_names = as.character(1:nsp),
+                          w_pp_cutoff=50)
+
+# increase sigma, lower CC
+paramsl_bs2 <- set_trait_model(no_sp = nsp, 
+                          min_w_inf = 10, 
+                          max_w_inf = 5e5,
+                          kappa = 0.001,
+                          n=3/4,
+                          beta = 100,
+                          sigma=2,
+                          gear_names = as.character(1:nsp),
+                          w_pp_cutoff=50)
+
+paramsl_bh@search_vol <- paramsl@search_vol
+paramsl_bh@species_params$gamma <- paramsl@species_params$gamma
+paramsl_bh@species_params$erepro <- 0.1
+
+paramsl_bh2@search_vol <- paramsl@search_vol
+paramsl_bh2@species_params$gamma <- paramsl@species_params$gamma
+paramsl_bh2@species_params$erepro <- 0.1
+
+paramsl_bi@search_vol <- paramsl@search_vol
+paramsl_bi@species_params$gamma <- paramsl@species_params$gamma
+paramsl_bi@species_params$erepro <- 0.1
+
+paramsl_bl@search_vol <- paramsl@search_vol
+paramsl_bl@species_params$gamma <- paramsl@species_params$gamma
+paramsl_bl@species_params$erepro <- 0.1
+
+paramsl_bs@search_vol <- params@search_vol
+paramsl_bs@species_params$gamma <- params@species_params$gamma
+paramsl_bs@species_params$erepro <- 0.1
+
+paramsl_bs2@search_vol <- params@search_vol
+paramsl_bs2@species_params$gamma <- params@species_params$gamma
+paramsl_bs2@species_params$erepro <- 0.1
+
+siml_bl <- project(paramsl_bl, t_max=75, effort = 0)
+siml_bh <- project(paramsl_bh, t_max=75, effort = 0)
+siml_bh2 <- project(paramsl_bh2, t_max=75, effort = 0)
+siml_bi <- project(paramsl_bi, t_max=75, effort = 0)
+siml_bs <- project(paramsl_bs, t_max=75, effort = 0)
+siml_bs2 <- project(paramsl_bs2, t_max=75, effort = 0)
+
+hmm <- paramsl@w>1
+
+Nl_bl <- apply(siml_bl@n,3,rowSums)[76,hmm]
+Nl_bh <- apply(siml_bh@n,3,rowSums)[76,hmm]
+Nl_bh2 <- apply(siml_bh2@n,3,rowSums)[76,hmm]
+Nl_bi <- apply(siml_bi@n,3,rowSums)[76,hmm]
+Nl_bs <- apply(siml_bs@n,3,rowSums)[76,hmm]
+Nl_bs2 <- apply(siml_bs2@n,3,rowSums)[76,hmm]
+
+sims_beta <- data.frame(Scenario=rep(c('basecase','low beta & CC basecase','decreasing beta, low CC','decreasing, high beta','decreasing, high beta lower CC','increasing, low beta low CC','higher sigma, low CC','higher sigma, lower CC'),e=sum(hmm)),
+                   N=c(N,Nl,Nl_bl,Nl_bh,Nl_bh2,Nl_bi,Nl_bs,Nl_bs2),
+                   w=rep(params@w[hmm],8))
+
+require(ggplot2)
+ggplot(sims_beta) + 
+  geom_line(aes(x=w,y=N*w^2,col=Scenario,linetype=Scenario))+
+  scale_x_log10()+
+  scale_y_log10()+
+  xlab('weight (g)')+
+  theme_classic()
+
+
+#Feeding levels
+fl_bs <- getFeedingLevel(paramsl_bs,siml_bs@n[76,,],siml_bs@n_pp[76,])[12,hmm]
+fl_bs2 <- getFeedingLevel(paramsl_bs2,siml_bs2@n[76,,],siml_bs2@n_pp[76,])[12,hmm]
+fl_bh <- getFeedingLevel(paramsl_bh,siml_bh@n[76,,],siml_bh@n_pp[76,])[12,hmm]
+fl_bi <- getFeedingLevel(paramsl_bi,siml_bi@n[76,,],siml_bi@n_pp[76,])[12,hmm]
+fl_bh2 <- getFeedingLevel(paramsl_bh2,siml_bh2@n[76,,],siml_bh2@n_pp[76,])[12,hmm]
+fl_bl <- getFeedingLevel(paramsl_bl,siml_bl@n[76,,],siml_bl@n_pp[76,])[12,hmm]
+
+fls <- data.frame(Scenario=rep(c('basecase','low beta & CC basecase','decreasing beta, low CC','decreasing, high beta','decreasing, high beta lower CC','increasing, low beta low CC','higher sigma, low CC','higher sigma, lower CC'),e=sum(hmm)),
+                   FeedingLevel=c(fl_s,fl_l,fl_bl,fl_bh,fl_bh2,fl_bi,fl_bs,fl_bs2),
+                   w=rep(params@w[hmm],8))
+
+require(ggplot2)
+ggplot(fls) + 
+  geom_line(aes(x=w,y=FeedingLevel,col=Scenario,linetype=Scenario))+
+  scale_x_log10()+
+  xlab('weight (g)')+
+  theme_classic()+
+  geom_hline(aes(yintercept=fc),linetype=3,size=0.5)
+
+```
+The general conclusion seem to hold that with decreasing CC of the resource spectrum, fish at the larger end of the spectrum decline. The only way to almost entirely smooth over the variations in feeding level is to increase sigma such that most species will eat over a much larger span of the size spectrum. 
+
+Some thoughts on large predators in oligotrophic waters:
+
+* feed low on the food chain to avoid low food availability
+* decrease metabolic/activity cost as sit & wait predator (since $f_c \sim \frac{ks}{h \alpha}$, lowering ks means lower critical level).
+* increase gamma (pelagics) to increase feeding level 
+
+Adding (unbalanced, selective) fishing - does fishing in this way do anything to the system?
+
+```{r unbalanced selective fishing with changing CC}
+
+knife_edges <- params@species_params$w_mat + params@species_params$w_mat * 0.05
+
+paramsl@species_params$knife_edge_size <- knife_edges
+params@species_params$knife_edge_size <- knife_edges
+paramsl_bl@species_params$knife_edge_size <- knife_edges
+paramsl_bh@species_params$knife_edge_size <- knife_edges
+paramsl_bh2@species_params$knife_edge_size <- knife_edges
+paramsl_bi@species_params$knife_edge_size <- knife_edges
+paramsl_bs@species_params$knife_edge_size <- knife_edges
+paramsl_bs2@species_params$knife_edge_size <- knife_edges
+
+sim_f  <- project(params, t_max=75, effort = 0.5)
+siml_f  <- project(paramsl, t_max=75, effort = 0.5)
+siml_bl_f  <- project(paramsl_bl, t_max=75, effort = 0.5)
+siml_bh_f  <- project(paramsl_bh, t_max=75, effort = 0.5)
+siml_bh2_f <- project(paramsl_bh2, t_max=75, effort = 0.5)
+siml_bi_f  <- project(paramsl_bi, t_max=75, effort = 0.5)
+siml_bs_f  <- project(paramsl_bs, t_max=75, effort = 0.5)
+siml_bs2_f <- project(paramsl_bs2, t_max=75, effort = 0.5)
+
+N_f <- apply(sim_f@n,3,rowSums)[76,hmm]
+Nl_f <- apply(siml_f@n,3,rowSums)[76,hmm]
+Nl_bl_f <- apply(siml_bl_f@n,3,rowSums)[76,hmm]
+Nl_bh_f <- apply(siml_bh_f@n,3,rowSums)[76,hmm]
+Nl_bh2_f <- apply(siml_bh2_f@n,3,rowSums)[76,hmm]
+Nl_bi_f <- apply(siml_bi_f@n,3,rowSums)[76,hmm]
+Nl_bs_f <- apply(siml_bs_f@n,3,rowSums)[76,hmm]
+Nl_bs2_f <- apply(siml_bs2_f@n,3,rowSums)[76,hmm]
+
+sims_f <- data.frame(Scenario=rep(rep(c('basecase','low beta & CC basecase','decreasing beta, low CC','decreasing, high beta','decreasing, high beta lower CC','increasing, low beta low CC','higher sigma, low CC','higher sigma, lower CC'),e=sum(hmm)),2),
+                   N=c(N_f,Nl_f,Nl_bl_f,Nl_bh_f,Nl_bh2_f,Nl_bi_f,Nl_bs_f,Nl_bs2_f,sims_beta$N),
+                   w=rep(params@w[hmm],8),
+                   fished = c(rep(T,nrow(sims_beta)),rep(F,nrow(sims_beta))))
+
+
+require(ggplot2)
+ggplot(sims_f) + 
+  geom_line(aes(x=w,y=N*w^2,col=Scenario,linetype=fished,symbol=fished))+
+  scale_x_log10()+
+  scale_y_log10()+
+  xlab('weight (g)')+
+  theme_classic()
+
+sims_f_rel <- data.frame(Scenario=rep(c('basecase','low beta & CC basecase','decreasing beta, low CC','decreasing, high beta','decreasing, high beta lower CC','increasing, low beta low CC','higher sigma, low CC','higher sigma, lower CC'),e=sum(hmm)),
+                   relN=c(N/N_f,Nl_f/Nl,Nl_bl_f/Nl_bl,Nl_bh_f/Nl_bh,Nl_bh2_f/Nl_bh2,Nl_bi_f/Nl_bi,Nl_bs_f/Nl_bs,Nl_bs2_f/Nl_bs),
+                   w=rep(params@w[hmm],8))
+
+require(ggplot2)
+ggplot(sims_f_rel) + 
+  geom_line(aes(x=w,y=relN,col=Scenario,linetype=Scenario))+
+  geom_hline(aes(yintercept=1))+
+  scale_x_log10()+
+  scale_y_log10()+
+  xlab('weight (g)')+
+  theme_classic()
+
+#Feeding levels
+fs_f <- getFeedingLevel(params,sim_f@n[76,,],sim_f@n_pp[76,])[12,hmm]
+fl_f <- getFeedingLevel(paramsl,siml_f@n[76,,],siml_f@n_pp[76,])[12,hmm]
+fl_bs_f <- getFeedingLevel(paramsl_bs,siml_bs_f@n[76,,],siml_bs_f@n_pp[76,])[12,hmm]
+fl_bs2_f <- getFeedingLevel(paramsl_bs2,siml_bs2@n[76,,],siml_bs2_f@n_pp[76,])[12,hmm]
+fl_bh_f <- getFeedingLevel(paramsl_bh,siml_bh_f@n[76,,],siml_bh_f@n_pp[76,])[12,hmm]
+fl_bi_f <- getFeedingLevel(paramsl_bi,siml_bi_f@n[76,,],siml_bi_f@n_pp[76,])[12,hmm]
+fl_bh2_f <- getFeedingLevel(paramsl_bh2,siml_bh2_f@n[76,,],siml_bh2_f@n_pp[76,])[12,hmm]
+fl_bl_f <- getFeedingLevel(paramsl_bl,siml_bl_f@n[76,,],siml_bl_f@n_pp[76,])[12,hmm]
+
+fls_f <- data.frame(Scenario=rep(c('basecase','low beta & CC basecase','decreasing beta, low CC','decreasing, high beta','decreasing, high beta lower CC','increasing, low beta low CC','higher sigma, low CC','higher sigma, lower CC'),e=sum(hmm)),
+                   FeedingLevel=c(fs_f,fl_f,fl_bl_f,fl_bh_f,fl_bh2_f,fl_bi_f,fl_bs_f,fl_bs2_f),
+                   w=rep(params@w[hmm],8))
+
+require(ggplot2)
+ggplot(fls_f) + 
+  geom_line(aes(x=w,y=FeedingLevel,col=Scenario))+
+  scale_x_log10()+
+  xlab('weight (g)')+
+  theme_classic()+
+  geom_hline(aes(yintercept=fc),linetype=3,size=0.5)
+
+```
+
+It seems as though fishing smoothed out some of the trophic interactions that drove declines in large fish, such that the feeding limitation disappears. However, the declines in large fish are still more pronounced relative to the unfished scenario, but are far more abrupt.
+
+It also  seems that the slope of the spectrum declines consistently with declining CC - and with fishing. For instance, taking the basecase, lowering the CC leads to a ```r round((getCommunitySlope(siml)[76,1]/getCommunitySlope(sim)[76,1])*100-100,2)```% decrease in slope, adding fishing further reduces the slope by ```r round((getCommunitySlope(siml_f)[76,1]/getCommunitySlope(siml)[76,1])*100-100,2)```%. Similar declines in slopes can be observed for the other simulations.
+
+What if fishing is balanced and selective instead? Using Nis' 0.25, applied to $w_mat$ since that's where I apply fishing and there's lots more fish at that size class than $w_inf$:
+
+```{r balanced selective fishing with changing CC}
+
+effort <- (params@species_params$w_mat/ median(params@species_params$w_mat))^-0.25*0.5
+names(effort) <- as.character(1:nsp)
+
+sim_fb  <- project(params, t_max=75, effort = effort)
+siml_fb  <- project(paramsl, t_max=75, effort = effort)
+siml_bl_fb  <- project(paramsl_bl, t_max=75, effort = effort)
+siml_bh_fb  <- project(paramsl_bh, t_max=75, effort = effort)
+siml_bh2_fb <- project(paramsl_bh2, t_max=75, effort = effort)
+siml_bi_fb  <- project(paramsl_bi, t_max=75, effort = effort)
+siml_bs_fb  <- project(paramsl_bs, t_max=75, effort = effort)
+siml_bs2_fb <- project(paramsl_bs2, t_max=75, effort = effort)
+
+N_fb <- apply(sim_fb@n,3,rowSums)[76,hmm]
+Nl_fb <- apply(siml_fb@n,3,rowSums)[76,hmm]
+Nl_bl_fb <- apply(siml_bl_fb@n,3,rowSums)[76,hmm]
+Nl_bh_fb <- apply(siml_bh_fb@n,3,rowSums)[76,hmm]
+Nl_bh2_fb <- apply(siml_bh2_fb@n,3,rowSums)[76,hmm]
+Nl_bi_fb <- apply(siml_bi_fb@n,3,rowSums)[76,hmm]
+Nl_bs_fb <- apply(siml_bs_fb@n,3,rowSums)[76,hmm]
+Nl_bs2_fb <- apply(siml_bs2_fb@n,3,rowSums)[76,hmm]
+
+sims_fb <- data.frame(Scenario=rep(rep(c('basecase','low beta & CC basecase','decreasing beta, low CC','decreasing, high beta','decreasing, high beta lower CC','increasing, low beta low CC','higher sigma, low CC','higher sigma, lower CC'),e=sum(hmm)),2),
+                   N=c(N_fb,Nl_fb,Nl_bl_fb,Nl_bh_fb,Nl_bh2_fb,Nl_bi_fb,Nl_bs_fb,Nl_bs2_fb,sims_beta$N),
+                   w=rep(params@w[hmm],8),
+                   fished = c(rep(T,nrow(sims_beta)),rep(F,nrow(sims_beta))))
+
+
+require(ggplot2)
+ggplot(sims_fb) + 
+  geom_line(aes(x=w,y=N*w^2,col=Scenario,linetype=fished,symbol=fished))+
+  scale_x_log10()+
+  scale_y_log10()+
+  xlab('weight (g)')+
+  theme_classic()
+
+sims_fb_rel <- data.frame(Scenario=rep(c('basecase','low beta & CC basecase','decreasing beta, low CC','decreasing, high beta','decreasing, high beta lower CC','increasing, low beta low CC','higher sigma, low CC','higher sigma, lower CC'),e=sum(hmm)),
+                   relN=c(N_fb/N,Nl_fb/Nl,Nl_bl_fb/Nl_bl,Nl_bh_fb/Nl_bh,Nl_bh2_fb/Nl_bh2,Nl_bi_fb/Nl_bi,Nl_bs_fb/Nl_bs,Nl_bs2_fb/Nl_bs),
+                   w=rep(params@w[hmm],8))
+
+require(ggplot2)
+ggplot(sims_fb_rel) + 
+  geom_line(aes(x=w,y=relN,col=Scenario,linetype=Scenario))+
+  geom_hline(aes(yintercept=1))+
+  scale_x_log10()+
+  scale_y_log10()+
+  xlab('weight (g)')+
+  theme_classic()
+
+
+sims_fb_rel2 <- data.frame(Scenario=rep(c('basecase','low beta & CC basecase','decreasing beta, low CC','decreasing, high beta','decreasing, high beta lower CC','increasing, low beta low CC','higher sigma, low CC','higher sigma, lower CC'),e=sum(hmm)),
+                   relN=c(N_fb/N_f,Nl_fb/Nl_f,Nl_bl_fb/Nl_bl_f,Nl_bh_fb/Nl_bh_f,Nl_bh2_fb/Nl_bh2_f,Nl_bi_fb/Nl_bi_f,Nl_bs_fb/Nl_bs_f,Nl_bs2_fb/Nl_bs_f),
+                   w=rep(params@w[hmm],8))
+
+require(ggplot2)
+ggplot(sims_fb_rel2) + 
+  geom_line(aes(x=w,y=relN,col=Scenario,linetype=Scenario))+
+  geom_hline(aes(yintercept=1))+
+  scale_x_log10()+
+  scale_y_log10()+
+  xlab('weight (g)')+
+  theme_classic()
+
+#Feeding levels
+fs_fb <- getFeedingLevel(paramsl,sim_fb@n[76,,],sim_fb@n_pp[76,])[12,hmm]
+fl_fb <- getFeedingLevel(paramsl,siml_fb@n[76,,],siml_fb@n_pp[76,])[12,hmm]
+fl_bs_fb <- getFeedingLevel(paramsl_bs,siml_bs_fb@n[76,,],siml_bs_fb@n_pp[76,])[12,hmm]
+fl_bs2_fb <- getFeedingLevel(paramsl_bs2,siml_bs2@n[76,,],siml_bs2_fb@n_pp[76,])[12,hmm]
+fl_bh_fb <- getFeedingLevel(paramsl_bh,siml_bh_fb@n[76,,],siml_bh_fb@n_pp[76,])[12,hmm]
+fl_bi_fb <- getFeedingLevel(paramsl_bi,siml_bi_fb@n[76,,],siml_bi_fb@n_pp[76,])[12,hmm]
+fl_bh2_fb <- getFeedingLevel(paramsl_bh2,siml_bh2_fb@n[76,,],siml_bh2_fb@n_pp[76,])[12,hmm]
+fl_bl_fb <- getFeedingLevel(paramsl_bl,siml_bl_fb@n[76,,],siml_bl_fb@n_pp[76,])[12,hmm]
+
+fls_fb <- data.frame(Scenario=rep(c('basecase','low beta & CC basecase','decreasing beta, low CC','decreasing, high beta','decreasing, high beta lower CC','increasing, low beta low CC','higher sigma, low CC','higher sigma, lower CC'),e=sum(hmm)),
+                   FeedingLevel=c(fs_fb,fl_fb,fl_bl_fb,fl_bh_fb,fl_bh2_fb,fl_bi_fb,fl_bs_fb,fl_bs2_fb),
+                   w=rep(params@w[hmm],8))
+
+require(ggplot2)
+ggplot(fls_fb) + 
+  geom_line(aes(x=w,y=FeedingLevel,col=Scenario))+
+  scale_x_log10()+
+  xlab('weight (g)')+
+  theme_classic()+
+  geom_hline(aes(yintercept=fc),linetype=3,size=0.5)
+
+```
+
+As expected, balanced harvesting preserves larger individuals, but does that really matter in terms of yield? In fact, constant f across all sizes has larger yield in this case. Not sure if that'll hold across different formulations of effort and nominal effort values other than 0.5.

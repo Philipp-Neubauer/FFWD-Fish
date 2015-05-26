@@ -21,4 +21,4 @@ deps/sitehakyll/cabal.sandbox.config:
 	cd deps/sitehakyll && cabal sandbox init
 
 site/posts/%.md: site/posts/%.rmd
-	Rscript -e 'require("rmarkdown"); rmarkdown::render("$(<F)")'
+	Rscript -e 'require("rmarkdown"); rmarkdown::render("$(<)")'

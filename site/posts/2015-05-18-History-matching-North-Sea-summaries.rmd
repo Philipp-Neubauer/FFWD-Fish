@@ -1,0 +1,25 @@
+---
+title: "History matching size-based models - a real world example"
+author: "Philipp Neubauer"
+date: "18/05/2015"
+bibliography: "include/GP_emulators/History_match.bib"
+---
+
+```{r echo=F,message=F,results='hide'}
+library("knitcitations")
+require("mizer")
+require("parallel")
+require("ggplot2")
+require("emulator")
+require(dplyr)
+require(knitr)
+opts_chunk$set(cache=TRUE)
+```
+I first set up the model exactly as per mizer vignette. 
+
+```{r}
+
+
+
+```
+
