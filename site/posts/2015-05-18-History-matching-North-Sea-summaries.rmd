@@ -5,7 +5,11 @@ date: "18/05/2015"
 bibliography: "include/GP_emulators/History_match.bib"
 ---
 
-```{r echo=F,message=F,results='hide'}
+History matching the North Sea size-spectrum
+====================================
+
+
+```{r echo=F,message=F,results='hide',warning=FALSE}
 library("knitcitations")
 require("mizer")
 require("parallel")
@@ -15,11 +19,310 @@ require(dplyr)
 require(knitr)
 opts_chunk$set(cache=TRUE)
 ```
-I first set up the model exactly as per mizer vignette. 
+
+This approach will rely on (presumably) known growth parameters, biomass and catch information over an aggregated period to perform history matching for the north sea model. Using Nis' code to pre-calculate these:
+
+```{r data prep}
+
+script_dir <- '~/Work/FFWD-Fish/NorthSea/nis_scripts/'
+data_dir <- '~/Work/FFWD-Fish/NorthSea/'
+
+# Use north east continental shelf (LME number = 7)
+source(paste0(script_dir,'Biomass_from_RAMv3_PN.R'))
+Bstate <- Biomass_from_RAMv3(LMEnumber = 22,data_dir,script_dir)
+units <- Bstate[[2]]
+state <- Bstate[[1]]
+
+naFun <- function(fun) function(x) fun(x,na.rm=T) 
+naSum <- naFun(sum)
+naMean <- naFun(mean)
+
+new_state <- state %>% 
+  group_by(cnames) %>%
+  mutate(ssbio = ifelse(!is.nan(SSB),SSB,Biomass),
+         ssbflag = ifelse(!is.nan(SSB),1,0),
+         tcatch = ifelse(!is.nan(Catch),Catch,Landings)) %>%
+  summarise(ssbio = sum(ssbio),
+            ssbflag = mean(ssbflag),
+            tcatch = sum(tcatch),
+            F0 = naMean(F0),
+            M = naMean(M),
+            Fmsy = naMean(Fmsy),
+            t0 = naMean(t0),
+            wInf = naMean(wInf),
+            k = naMean(k))
+
+rownames(new_state) <- new_state[['cnames']]
+
+# From Blanchard et al 2014 
+new_state['Atlantic cod','k'] <- 0.216 
+new_state['Herring','k'] <- 0.606
+new_state['Norway pout','k'] <- 0.849
+new_state['European Plaice','k'] <- 0.135 # Plaice
+new_state['Sand lance','k'] <- 1 # Sand eel
+new_state['common European sole','k'] <-  0.284 # Sole
+new_state['Sprat','k'] <- 0.681 # Sprat
+new_state['Pollock','k'] <- 0.175 # Pollock (Saithe)
+new_state['Haddock','k'] <- 0.271 # Haddock
+new_state['Whiting','k'] <- 0.323 # Whiting 
+
+new_state['Sand lance','wInf'] <- 36
+new_state['Whiting','wInf']  <- 1192
+new_state['European Plaice','wInf']  <- 1650 #FB calc
+new_state$t0 <- 0
+
+# Why no catch information on Sprat??? Add from assessment
+new_state['Sprat','Fmsy'] <- 1.3
+new_state['Sprat','tcatch'] <- 175200
+
+# add JB's North Sea Rmaxs
+Rmax <- read.csv('../../NorthSea/Rmaxs.csv')
+new_state$Rmax <- Rmax[match(rownames(new_state),Rmax$Species),'Rmax']
+
+new_state <- new_state %>% arrange(wInf)
+
+ggplot(data = new_state, aes(x = wInf, y = ssbio))+
+  geom_point(color='blue')+
+  scale_y_log10()+
+  scale_x_log10()+
+  theme_bw()+
+  geom_smooth(method = 'lm', se = T)
+
+
+# Look at the system wide fishing mortality 
+
+ggplot(data = new_state, aes(x = wInf,y=F0))+
+  geom_point()+
+  scale_x_log10()+
+  geom_smooth(method = 'lm', se = T)+
+  theme_bw()
+
+source('include/NS_deps/dep_funs.R')
+
+# spell out parameters to match
+step=0.1
+w50 <- apply(vanBGrowth(new_state,step),1,function(x) which.min((x-0.5)^2)*step)
+w50_sd <- w50*0.1
+
+tcatch <- new_state$tcatch
+tcatch_sd <- new_state$tcatch*0.1
+
+biom <- new_state$ssbio
+biom_sd <- new_state$ssbio*0.1
+
+ssbflag <- new_state$ssbflag
+
+```
+
+For the history matching, I need a function that returns all the outputs that will be matched.
+
+```{r define run function}
+
+source(paste0(script_dir,'baseparameters.R'))
+source(paste0(script_dir,'IterateSpectrum.R'))
+source(paste0(script_dir,'YieldCalc.R'))
+source(paste0(script_dir,'calcSSB.R'))
+
+run_spectrum <- function(state,h,kappa,Rmax,script_dir,growth=T,dt,tEnd){
+  
+  param <- baseparameters(new_state$wInf, kappa = kappa, h = h,script_dir,dt) # Kappa estimated from LME 
+  param$tEnd <- tEnd
+  param$F0 <- state$F0
+  param$fishing <- "Trawl"
+  param$Rmax <- Rmax
+  
+  S <- IterateSpectrum(param,S=NA,script_dir=script_dir)
+  
+  tEnd <- param$tEnd/param$dt
+  yield <- YieldCalc(param,S)
+  biom <- S$Biomass[tEnd,]
+  biom[ssbflag] <- calcSSB(param,S,tEnd)[ssbflag,]
+  
+  if (growth==T) {
+    w50est <- getGrowth(param,S,step)
+    list(yield = yield, biom = biom, w50est = w50est)
+  } else {
+    list(yield = yield, biom = biom)
+  }
+  
+}
+
+```
+
+Now start with some of Nis' calibration values - but vary them over orders of magnitude to get the model behaviour:
+
+```{r test of runfunc}
+# little test:
+kappa=880000
+h <- 3*new_state$k/(0.6*new_state$wInf^(-1/3))
+h[1:9] <- 30
+h[10] <- 30
+h[3] <- 35
+Rmax <- baseparameters(new_state$wInf, kappa = kappa, h = h,script_dir,0.1)$Rmax # 
+test <- run_spectrum(new_state,h=h,kappa =  kappa,Rmax=as.matrix(Rmax),script_dir,growth = F,dt=0.1,tEnd=80)
+
+test
+```
+ Looks pretty bad - lets fit it over a range of parameters:
+ 
+```{r define HM simulator inputs}
+lseq <- function(from,to,l) exp(seq(log(from), log(to), length.out = l))
+
+dimf <- 6
+
+kappas <- lseq(1e4,1e6,l=dimf)
+h <- seq(20,40,l=dimf)
+Rmax_mult <- lseq(1e5,1e7,l=dimf)
+Rmax_sc <- lseq(1e6,1e8,l=dimf)
+
+# keep h fixed for now
+grid <- expand.grid(kappas=kappas,
+                    h = h,
+                    beta=Rmax_mult,
+                    alpha=Rmax_sc)
+
+dim(grid)
+
+```
+
+Apply the model:
+
+```{r run simulator}
+
+grid.list <- split(grid, rownames(grid))
+
+model_grid_out <- mclapply(grid.list,function(x){
+         run_spectrum(state_new,
+                  h=x[,2],
+                  kappa=x[,1],
+                  Rmax=x[,3]+(x[,4]/log(param$wInf)),
+                  script_dir,
+                  growth = F,
+                  dt=0.4,
+                  tEnd=20)},
+         mc.cores = 4)
+
+nOuts <- 2
+nSpecies <- 10
+
+model_grid <- vector('list',nOuts)
+model_grid[[1]] <- do.call('rbind',lapply(model_grid_out,function(x) x$biom))
+
+model_grid[[2]] <- do.call('rbind',lapply(model_grid_out,function(x) as.vector(x$yield)))
+
+model_grid[[3]] <- do.call('rbind',lapply(model_grid_out,function(x) as.vector(x$w50est)))
+
+```
 
 ```{r}
 
 
+inputs <- grid
+
+meanfunk <- function(x){
+  out <- c(1,x,x^2,x^3)
+  names(out) <- letters[1:length(x)]
+  return(out)
+}
+
+meanfunks <- function(x){
+  out <- c(1,x)
+  names(out) <- letters[1:length(x)]
+  return(out)
+}
+
+# scale inputs to lie in [-1,1], makes things more numerically stable
+
+ipmax <- apply(inputs,2,max)
+ipmean <- colMeans(inputs)
+ipsd <- apply(inputs,2,sd)
+
+scale <- function(x,ipmean,ipmax) (x-ipmean)/(ipmax-ipmean)
+rescale <- function(x,ipmean,ipmax) x*(ipmax-ipmean)+ipmean
+
+input <- t(apply(inputs, 1, scale, ipmean, ipmax))
+
+cube_pred <- 7
+
+pkappas <- lseq(1e4,1e6,l=cube_pred )
+ph <- seq(20,40,l=cube_pred )
+pRmax_mult <- lseq(1e5,1e7,l=cube_pred )
+pRmax_sc <- lseq(1e6,1e8,l=cube_pred )
+
+pred.grid <- expand.grid(kappas=pkappas,
+                    h = ph,
+                    beta=pRmax_mult,
+                    alpha=pRmax_sc)
+
+dim(pred.grid)
+
+pred.grid.in <- t(apply(pred.grid,1,scale,ipmean,ipmax))
+rownames(pred.grid.in) <- 1:nrow(pred.grid.in)
+pred.grid.in.list <- split(pred.grid.in, rownames(pred.grid.in))
+
+pars <- vector('list',nOuts)
+GPpred <- pars
+
+scale_start <- 1/(0.125*as.vector(diff(apply(input,2,range))))^2
+
+for (o in 1:nOuts){
+  cat(o,'\n')
+  pars[[o]] <- vector('list',nSpecies)
+  GPpred[[o]] <- vector('list',nSpecies)
+  for (s in 1:nSpecies){
+    cat(s,'\n') 
+    pars[[o]][[s]][['params']] <- scale_start# optimal.scales(val=input,scale_start,func=meanfunk, as.matrix(model_grid[[o]][,s]),method='SANN',control=list(trace=TRUE,REPORT=10,maxit = 20,reltol=0.001))
+    
+    pars[[o]][[s]][['CorrMat']] = corr.matrix(input,scales=pars[[o]][[s]][['params']])
+    pars[[o]][[s]][['invCorrMat']] <- chol2inv(chol((pars[[o]][[s]][['CorrMat']])))
+    
+    
+    mpred <- parallel::mclapply(pred.grid.in.list,
+                                interpolant,
+                                as.matrix(model_grid[[o]][,s]),
+                                as.matrix(input),
+                                A=pars[[o]][[s]][['CorrMat']],
+                                Ainv=pars[[o]][[s]][['invCorrMat']],
+                                scales=pars[[o]][[s]][['params']],
+                                func=meanfunk,
+                                g=TRUE,
+                                mc.cores=4)
+    
+    GPpred[[o]][[s]][['var']] <- unlist(lapply(mpred,function(x) x$Z))
+    GPpred[[o]][[s]][['mean']] <- unlist(lapply(mpred,function(x) x$mstar.star))
+    
+  }
+}
+
+preds <- do.call('cbind',lapply(GPpred,function(x){
+    do.call('rbind',lapply(x, function(y) do.call('cbind',y)))
+    }
+  )
+)
+
+pred.list <- split(data.frame(preds), rep(1:(cube_pred^nOuts),nSpecies))
+
+pred.list.match <- lapply(pred.list, function(x){
+  means = (x[,grepl('mean',colnames(x))])
+  vars = (x[,grepl('var',colnames(x))])^2
+  list(means,vars)
+})
+
+modelvar <- matrix(apply(preds[,grepl('mean',colnames(preds))],2,var)*0.1,
+                   nrow = nSpecies,
+                   ncol = nOuts,
+                   byrow = T)
+
+datas <- data.frame(biom,tcatch,w50)
+sds <- data.frame(biom_sd,tcatch_sd,w50_sd)
+
+pred.grid$Implausibility <- do.call('rbind',lapply(pred.list.match,function(x){ 
+  imp <- t(as.matrix(unlist(datas - x[[1]]))) %*% solve(diag(unlist(sds+x[[2]]+modelvar))) %*% (as.matrix(unlist(datas - x[[1]])))
+  return(imp)
+}))
+
+ggplot(pred.grid,aes(x=kappas,y=beta,z=Implausibility)) + stat_summary2d(fun = function(x) mean(x>3))
 
 ```
+
 
