@@ -1,0 +1,141 @@
+---
+title: "Predictive values for PPMRs"
+author: "Philipp Neubauer"
+date: "18/05/2015"
+bibliography: "include/GP_emulators/History_match.bib"
+---
+
+PPMRs
+====================================
+
+```{r }
+require(dplyr)
+require(INLA)
+
+ppmr.tab <-read.csv('NorthSea/PPMR.csv',header=T,na.strings = 'n/a',stringsAsFactors = F)
+ppmr <- tbl_df(ppmr.tab)
+
+ppmr$Prey.mass[ppmr$Prey.mass.unit=='mg'] <- ppmr$Prey.mass[ppmr$Prey.mass.unit=='mg'] /1000
+
+ppmr$Latitude <- as.numeric(substr(ppmr$Latitude,start = 1,stop = 2))
+ppmr <- ppmr %>% filter(!Type.of.feeding.interaction %in% c('insectivorous','predacious/piscivorous'))
+
+std <- function(x) (x-mean(x))/(2*sd(x))
+ppmr <- ppmr %>% mutate(Mean.annual.temp = std(Mean.annual.temp),
+                SD.annual.temp = std(SD.annual.temp),
+                Latitude = std(Latitude),
+                Mean.PP = std(Mean.PP),
+                Depth = std(Depth),
+                Pmass=Predator.mass)
+
+ppmr.better <- ppmr %>% filter(Predator.quality.of.length.mass.conversion <5,
+                            Prey.quality.of.conversion.to.mass <5)
+
+ppmr.best <- ppmr %>% filter(Predator.quality.of.length.mass.conversion <4,
+                            Prey.quality.of.conversion.to.mass <4)
+
+
+best.model.rw <-  inla(log10(Prey.mass) ~ 
+                       std(log10(Predator.mass)) * Mean.annual.temp +
+                       #f(log10(Pmass),model='rw2', diagonal=1e-5) + 
+                       f(Predator,model='iid') + 
+                       f(Individual.ID,model='iid')+
+                       f(Geographic.location,model='iid')+
+                       f(Type.of.feeding.interaction,model='iid')+
+                       #f(Specific.habitat,model='iid')+
+                       #Mean.annual.temp +
+                       SD.annual.temp +
+                       Depth +
+                       #Latitude + 
+                       Mean.PP,
+                     data = ppmr.best,
+                     control.compute = list(dic=TRUE,cpo=T),
+                     control.predictor = list(compute=T)
+)
+
+summary(best.model.rw)
+plot(best.model.rw)
+plot(best.model.rw$summary.linear.predictor$`0.5quant`,log10(ppmr.best$Prey.mass))
+
+-mean(log(best.model.rw$cpo$cpo))
+
+
+best.model <-  inla(log10(Prey.mass) ~ log10(Predator.mass)+
+                       #f(log10(Pmass),model='rw2', diagonal=1e-5) + 
+                       f(Predator,model='iid') + 
+                       f(Individual.ID,model='iid')+
+                       f(Geographic.location,model='iid')+
+                       f(Type.of.feeding.interaction,model='iid')+
+                       #f(Specific.habitat,model='iid')+
+                       Mean.annual.temp +
+                       SD.annual.temp +
+                       Depth +
+                       #Latitude + 
+                       Mean.PP,
+                     data = ppmr.best,
+                     control.compute = list(dic=TRUE,cpo=T),
+                     control.predictor = list(compute=T),
+)
+
+summary(best.model)
+plot(best.model)
+plot(best.model$summary.linear.predictor$`0.5quant`,log10(ppmr.best$Prey.mass))
+
+-mean(log(best.model$cpo$cpo))
+hist(best.model$cpo$pit)
+
+
+best.model.int <-  inla(log10(Prey.mass) ~ log10(Predator.mass)*Mean.annual.temp+
+                      SD.annual.temp +
+                      #f(log10(Pmass),model='rw2', diagonal=1e-5) + 
+                      f(Predator,model='iid') + 
+                      f(factor(Individual.ID),model='iid')+
+                      f(Geographic.location,model='iid')+
+                  f(Type.of.feeding.interaction,model='iid')+
+                      #f(Specific.habitat,model='iid')+
+                      Depth +
+                      #Latitude + 
+                      Mean.PP,
+                    data = ppmr.best,
+                    control.compute = list(dic=TRUE,cpo=T),
+                    control.predictor = list(compute=T)
+)
+
+
+
+summary(best.model.int)
+plot(best.model.int)
+plot(best.model.int$summary.linear.predictor$`0.5quant`,log10(ppmr.best$Prey.mass))
+abline(a=0,b=1)
+
+-mean(log(best.model.int$cpo$cpo))
+hist(best.model.int$cpo$pit)
+
+
+
+better.model.int <-  inla(log10(Prey.mass) ~ log10(Predator.mass)*Mean.annual.temp+
+                      SD.annual.temp +
+                      #f(log10(Pmass),model='rw2', diagonal=1e-5) + 
+                      f(Predator,model='iid') + 
+                      f(factor(Individual.ID),model='iid')+
+                      f(Geographic.location,model='iid')+
+                  f(Type.of.feeding.interaction,model='iid')+
+                      #f(Specific.habitat,model='iid')+
+                      Depth +
+                      #Latitude + 
+                      Mean.PP,
+                    data = ppmr.better,
+                    control.compute = list(dic=TRUE,cpo=T),
+                    control.predictor = list(compute=T)
+)
+
+summary(better.model.int)
+#plot(better.model.int)
+plot(better.model.int$summary.linear.predictor$`0.5quant`,log10(ppmr.better$Prey.mass))
+abline(a=0,b=1)
+
+-mean(log(better.model.int$cpo$cpo))
+hist(better.model.int$cpo$pit)
+
+```
+
