@@ -255,12 +255,14 @@ jagsdata <- list(COVS=COVS,
                  ind = nidx(ppmr.data$Individual.ID)
 )
                  
-JM <- jags.model(file = 'taxmodel_HC.R',data=jagsdata,n.chains = 1, n.adapt=1000)
-
-update(JM,10000)
-
-mout <- coda.samples(model = JM,
-                     variable.names = c('betas',
+JM <- jags.parallel(model.file = 'taxmodel_HC.R',
+                    n.iter = 550000,
+                    n.burnin = 50000,
+                    DIC = T,
+                    n.thin = 50,
+                    data=jagsdata,
+                    n.chains = 3,
+                    parameters.to.save = c('betas',
                                         'sd.ind',
                                         'sd.species',
                                         'sd.family',
@@ -272,9 +274,9 @@ mout <- coda.samples(model = JM,
                                         'species.scale',
                                         'family.scale',
                                         'class.scale',
-                                        'order.scale'),
-                     n.iter = 1e5,
-                     thin = 50)
+                                        'order.scale'))
+
+save(JM,'JMout.Rdata')
 
 ```
 
