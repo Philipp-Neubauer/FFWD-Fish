@@ -327,24 +327,14 @@ ggplot(mlobs,aes(x=value, fill=factor(tax))) +
     ylab('Density')+
     xlab('log10(Prey/Predator)')
   
+sds <- JM$BUGSoutput$sims.list[grepl('sd',names(JM$BUGSoutput$sims.list))]
+msd <- reshape2::melt(sds)
 
-gridExtra::grid.arrange(gg[[1]],gg[[4]],gg[[5]],gg[[3]],gg[[2]],ncol=1)
-
-
-mobs <- do.call('rbind',)
-
-mobs %>% split(.$Var2) %>% map(~density(.$value))
-
-ddp <- dd$y/(17.4*(10^dd$x)^-1)
-ddp=ddp/max(ddp)
-dd$y <- dd$y/max(dd$y)
-plot((dd$x),ddp)
-lines((dd$x),dd$y)
 
 
 ob <- JM$BUGSoutput$sims.list[c('tau','betas','speciesmu','familymu','speciesmu','classmu')]
 
-slopes=seq(0,2.5,0.1); ddif = slopes
+slopes=seq(1,3,0.1); ddif = slopes
 for (i in 1:length(slopes)){
   
   s = slopes[i]
@@ -358,9 +348,19 @@ for (i in 1:length(slopes)){
   dens <- dnorm(xs,oam,oasd)
   sdens <- dens/xsc
   
-  ddif[i] <- xs[which.max(sdens)]/xs[which.max(dens)]
+  ddif[i] <- xs[which.max(sdens)]-xs[which.max(dens)]
   
 }
+
+plot(slopes,ddif,t='l',ylab=expression(Delta~log[10](PPMR)),xlab=expression(paste('Size spectrum slope ',lambda)))
+
+plot(xs,dens/max(dens),t='l',ylab='density',xlab=expression(Delta~log[10](PPMR)))
+lines(xs[xs>-2.5],xsc[xs>-2.5]/max(xsc[xs>-2.5]),t='l',col=1,lty=2)
+lines(xs,(dens/xsc)/max(dens/xsc),t='l',col=2)
+
+
+
+
 
 colnames(ob$familymu) <- unique(ppmr.data$Family) 
 famus <- apply(ob$familymu,2,mean)
@@ -389,8 +389,6 @@ colnames(obss$l_obs_sp) <- unique(ppmr.data$Predator)
 colnames(obss$l_obs_ord) <- unique(ppmr.data$Order) 
 colnames(obss$l_obs_cl) <- unique(ppmr.data$Class) 
 
-plot(xs,dens/max(dens),t='l')
-lines(xs,(dens/xsc)/max(dens/xsc),t='l',col=2)
 
 save(JM,'JMout.Rdata')
 
