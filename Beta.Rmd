@@ -157,7 +157,7 @@ best.model.int <-  inla(log10(Prey.mass) ~ log10(Predator.mass)*Mean.annual.temp
 
 
 summary(best.model.int)
-plot(best.model.int)
+plot(best.model.int)™
 plot(best.model.int$summary.linear.predictor$`0.5quant`,log10(ppmr.best$Prey.mass))
 abline(a=0,b=1)
 
@@ -230,9 +230,16 @@ COVS <- ppmr.data %>% select(log_ten_Pred,
   
 COVS<- data.frame(intercept=1,COVS)
   
+rr <- range(ppmr.data$Prey.mass)
+
+ssum <- (rr[2]/rr[1])*(1+(rr[2]/rr[1])^-2)/2
+
+rel.abu.size <- (ppmr.data$Prey.mass/rr[1])^-2/ssum
+
 require(R2jags)
 
 jagsdata <- list(COVS=COVS,
+                 rel.abu.size=log10(rel.abu.size),
                  NCOVS = ncol(COVS),
                  log_ten_Prey = log10(ppmr.data$Prey.mass),
                  PREY = nrow(ppmr.data),
@@ -246,6 +253,7 @@ jagsdata <- list(COVS=COVS,
                  NCLASSES = n(ppmr.data$Class),
                  species = PR[match(unique(ind),ind)],
                  family = FAM[match(unique(PR),PR)],
+                 fam=FAM,
                  order = ORD[match(unique(FAM),FAM)],
                  class = CL[match(unique(ORD),ORD)],
                  # effect indices
@@ -254,27 +262,135 @@ jagsdata <- list(COVS=COVS,
                  geoarea = nidx(ppmr.data$Geographic.location),
                  ind = nidx(ppmr.data$Individual.ID)
 )
-                 
-JM <- jags.parallel(model.file = 'taxmodel_HC.R',
-                    n.iter = 550000,
-                    n.burnin = 50000,
+
+JM <- jags.parallel(model.file = 'taxmodel_HC_pref.R',
+                    n.iter = 150000,
+                    n.burnin = 15000,
                     DIC = T,
                     n.thin = 50,
                     data=jagsdata,
                     n.chains = 3,
                     parameters.to.save = c('betas',
-                                        'sd.ind',
-                                        'sd.species',
-                                        'sd.family',
-                                        'sd.order',
-                                        'sd.class',
-                                        'sd.geoareafx',
-                                        'sd.habfx',
-                                        'sd.feedtypefx',
-                                        'species.scale',
-                                        'family.scale',
-                                        'class.scale',
-                                        'order.scale'))
+                                           'sd.ind',
+                                           'sd.species',
+                                           'sd.family',
+                                           'sd.order',
+                                           'sd.class',
+                                           'sd.geoareafx',
+                                           'sd.habfx',
+                                           'sd.feedtypefx',
+                                           'species.scale',
+                                           'family.scale',
+                                           'class.scale',
+                                           'order.scale',
+                                           'tau',
+                                           'familymu',
+                                           'speciesmu',
+                                           'ordermu',
+                                           'classmu',
+                                           'l_obs',
+                                           'l_obs_sp',
+                                           'l_obs_fam',
+                                           'l_obs_cl',
+                                           'l_obs_ord'))
+
+obss <- JM$BUGSoutput$sims.list[c('l_obs','l_obs_sp','l_obs_fam','l_obs_cl','l_obs_ord')]
+colnames(obss$l_obs) <- 'Overall'
+colnames(obss$l_obs_fam) <- unique(ppmr.data$Family) 
+colnames(obss$l_obs_sp) <- unique(ppmr.data$Predator) 
+colnames(obss$l_obs_ord) <- unique(ppmr.data$Order) 
+colnames(obss$l_obs_cl) <- unique(ppmr.data$Class) 
+
+names(obss) <- c('Overall','Species','Family','Class','Order')
+
+mlobs <- lapply(1:5,function(x) data.frame(Level=names(obss)[x], reshape2::melt(obss[[x]],factorsAsStrings=T),stringsAsFactors=F))
+
+mlobs$Var2 <- as.character(mlobs$Var2) 
+
+mlobs <- do.call('rbind',mlobs) 
+mlobs$Level <- factor(mlobs$Level,levels = c('Overall','Class','Order','Family','Species'))
+
+niter=8100
+
+mlobs <- mlobs %>% 
+  group_by(Level) %>%
+  mutate(tax = rep(1:length(unique(Var2)),each=niter))
+
+require(ggplot2)
+
+ggplot(mlobs,aes(x=value, fill=factor(tax))) + 
+    facet_wrap(~Level,ncol=1) + 
+    geom_density(aes(y=(..density..)/max(..density..)),trim=F,alpha=0.5) +   #geom_density(aes(y=(..density../((10^x)^-2))/max(..density../((10^x)^-2))),trim=F,linetype=2,alpha=0.3) + 
+    theme_classic() + 
+    coord_cartesian(xlim=c(-10,5))+
+  scale_fill_discrete(guide='none')+
+    ylab('Density')+
+    xlab('log10(Prey/Predator)')
+  
+
+gridExtra::grid.arrange(gg[[1]],gg[[4]],gg[[5]],gg[[3]],gg[[2]],ncol=1)
+
+
+mobs <- do.call('rbind',)
+
+mobs %>% split(.$Var2) %>% map(~density(.$value))
+
+ddp <- dd$y/(17.4*(10^dd$x)^-1)
+ddp=ddp/max(ddp)
+dd$y <- dd$y/max(dd$y)
+plot((dd$x),ddp)
+lines((dd$x),dd$y)
+
+
+ob <- JM$BUGSoutput$sims.list[c('tau','betas','speciesmu','familymu','speciesmu','classmu')]
+
+slopes=seq(0,2.5,0.1); ddif = slopes
+for (i in 1:length(slopes)){
+  
+  s = slopes[i]
+  
+  xs <- seq(-5,1,l=1e4)
+  xsc <- (10^xs)^-s
+  
+  oam <- mean(ob$betas[,1])
+  oasd <- sqrt(1/mean(ob$tau))
+  
+  dens <- dnorm(xs,oam,oasd)
+  sdens <- dens/xsc
+  
+  ddif[i] <- xs[which.max(sdens)]/xs[which.max(dens)]
+  
+}
+
+colnames(ob$familymu) <- unique(ppmr.data$Family) 
+famus <- apply(ob$familymu,2,mean)
+famdens <- lapply(famus,function(x) dnorm(xs,x+oam,oasd))
+
+fdens <- reshape2:::melt.list(famdens,level=1)
+fdens$xs <- xs
+fdens$xsc <- xsc
+fdens <- fdens %>% 
+  group_by(L1) %>%
+  mutate(dens = value/max(value),
+         scd = value/xsc,
+         sdens = scd/max(scd))
+
+fdens %>% 
+  summarise(dd = round(xs[which.max(sdens)]-xs[which.max(dens)],2)) %>%
+  summarise(offset = dd)
+
+ggplot(fdens,aes(col=L1,x=(xs))) + 
+  geom_line(aes(y=dens),linetype=1)+
+  geom_line(aes(y=sdens),linetype=2)
+
+colnames(obss$l_obs) <- 'Overall'
+colnames(ob$familymu) <- unique(ppmr.data$Family) 
+colnames(obss$l_obs_sp) <- unique(ppmr.data$Predator) 
+colnames(obss$l_obs_ord) <- unique(ppmr.data$Order) 
+colnames(obss$l_obs_cl) <- unique(ppmr.data$Class) 
+
+plot(xs,dens/max(dens),t='l')
+lines(xs,(dens/xsc)/max(dens/xsc),t='l',col=2)
 
 save(JM,'JMout.Rdata')
 
