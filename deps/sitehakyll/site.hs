@@ -7,11 +7,15 @@ import           Hakyll
 --------------------------------------------------------------------------------
 main :: IO ()
 main = hakyll $ do
-    match ("images/*" .||. "posts/**/*.png") $ do
+    match ("images/*" .||. "posts/**/*.png" .||. "posts/**/*.pdf") $ do
         route   idRoute
         compile copyFileCompiler
 
     match "stylesheets/**.scss" $ compile getResourceBody
+
+    match "posts/include/biblio/bib/*.bib" $ compile biblioCompiler
+
+    match "posts/include/biblio/csl/*.csl" $ compile cslCompiler
 
     scssDependencies <- makePatternDependency "stylesheets/**.scss"
     rulesExtraDependencies [scssDependencies] $
@@ -27,7 +31,7 @@ main = hakyll $ do
 
     match "posts/*.md" $ do
         route $ setExtension "html"
-        compile $ pandocCompiler
+        compile $ pandocBiblioCompiler "posts/include/biblio/csl/ecology.csl" "posts/include/biblio/bib/FFF.bib"
             >>= loadAndApplyTemplate "templates/post.html"    postCtx
             >>= loadAndApplyTemplate "templates/default.html" postCtx
             >>= relativizeUrls
@@ -75,4 +79,3 @@ sassCompiler = loadBody (fromFilePath "stylesheets/ffwd-fish.scss")
     >>= makeItem
     >>= withItemBody (unixFilter "scss" ["-s", "-C", "-I", "stylesheets"])
     >>= return . fmap compressCss
-

@@ -1,0 +1,224 @@
+---
+title: "Sources of variation in PPMRs"
+date: "20/10/2015"
+---
+
+
+```{r echo=F,message=F,results='hide',warning=F}
+require(knitr)
+opts_chunk$set(cache=TRUE,warning=F,message=F)
+#library("knitcitations")
+require("ggplot2")
+require(dplyr)
+# 
+# 
+# cleanbib()
+# options("citation_format" = "pandoc")
+# bib = read.bibtex('include/FF_Fish_bib/FFF.bib')
+```
+
+
+Background
+====================================
+
+Many size based models for marine ecosystems 
+
+I'll clo follow [@andrianakis:bayesian]
+
+
+```{r }
+require(dplyr)
+require(INLA)
+
+ppmr.tab <-read.csv('include/PPMR_files/PPMR.csv',header=T,na.strings = 'n/a',stringsAsFactors = F)
+ppmr <- tbl_df(ppmr.tab)
+
+ppmr$Prey.mass[ppmr$Prey.mass.unit=='mg'] <- ppmr$Prey.mass[ppmr$Prey.mass.unit=='mg'] /1000
+
+ppmr$Latitude <- as.numeric(substr(ppmr$Latitude,start = 1,stop = 2))
+ppmr <- ppmr %>% filter(!Type.of.feeding.interaction %in% c('insectivorous','predacious/piscivorous'))
+
+std <- function(x) (x-mean(x))/(2*sd(x))
+ppmr <- ppmr %>% mutate(Mean.annual.temp = std(Mean.annual.temp),
+                SD.annual.temp = std(SD.annual.temp),
+                Latitude = std(Latitude),
+                Mean.PP = std(Mean.PP),
+                Depth = std(Depth),
+                Pmass=Predator.mass)
+
+################################
+###### Taxise ##################
+################################
+
+require("taxize")
+
+# taxonomy of unresolved names
+us <- unique(ppmr$Predator)
+us[us=='Urophysis chuss'] <- 'Urophycis chuss'
+us[us=='Leucoraja  fullonica   '] <- 'Leucoraja  fullonica'
+us[us=='Myoxocephalus octodecimspinosus'] <- 'Myoxocephalus octodecemspinosus'
+
+trim <- function (x) gsub("^\\s+|\\s+$", "", x)
+us <-trim(us)
+nus<- strsplit(us,split = ' sp.',fixed=T)
+
+
+cs <- classification(nus, db = 'itis')
+
+# check names for un-resolved names
+urn <- which(unlist(lapply(cs,length))==1)
+csu <- classification(us[urn], db = 'col',rows=1)
+cs[urn] <- csu
+
+urn2 <- which(unlist(lapply(cs,length))==1)
+cuss <- classification(us[urn2], db = 'ncbi',rows=1)
+cs[urn2] <- cuss 
+
+ppmr$Class <- unlist(lapply(cs,function(x) x$name[x$rank=='Class' |x$rank=='class' ]))[match(ppmr$Predator,unique(ppmr$Predator))]
+
+ppmr$Order <- unlist(lapply(cs,function(x) x$name[x$rank=='Order' | x$rank=='order']))[match(ppmr$Predator,unique(ppmr$Predator))]
+
+ppmr$Family <- unlist(lapply(cs,function(x) x$name[x$rank=='Family' | x$rank=='family']))[match(ppmr$Predator,unique(ppmr$Predator))]
+
+##################################################
+################ Habitats ######################## 
+##################################################
+
+# get habitat and taxonomy from fishbase and other DBs
+require(rfishbase)
+
+fish.data <- loadCache()
+
+# %in% doesn't work, need grepl as some ScientificNames don't match - makes it really slow
+match_tax <- function (species, fish.data = NULL, path = NULL) {
+   
+    if (is.null(fish.data)) 
+        fish.data <- loadCache(path = path)
+        
+    matches <- vector('list',length(species))
+    for (i in 1:length(species)){
+    matches[[i]] <- which(sapply(fish.data, function(x) grepl(species[i],x$ScientificName) | grepl(species[i],x$Genus) | grepl(species[i],x$Family)| grepl(species[i],x$Class)))
+    }
+    return(matches)
+}
+
+
+sp_match <- parallel::mclapply(nus,match_tax,mc.cores=4)
+#save(sp_match, file = 'fb_species_match.rda')
+#load(file = 'fb_species_match.rda')
+
+sp_match <- do.call('c',sp_match)
+
+# get habitat for FB species. For higher taxonomic groupings, 
+
+habitats <- do.call('c',lapply(sp_match,function(x) {
+  if(length(x)>0){
+    habitats<- list()
+    for (i in 1:length(x))
+      habitats[[i]] <- fish.data[[x[i]]]$habitat
+    
+    habitats <- table(unlist(lapply(habitats,function(y) {
+      if(!is.null(y)) strsplit(y,'[;]')[[1]][1]
+      })))
+    habitat<-names(which.max(habitats))
+    
+    } else {
+    habitat <- NA
+    }
+  habitat
+  }
+)
+)
+
+unique(ppmr$Predator)[is.na(habitats)]
+
+habitats[is.na(habitats)] <- c('pelagic-neritic','bathypelagic','demersal','demersal','demersal','demersal','demersal','demersal','demersal','benthopelagic')
+
+ppmr$habitat <- habitats[match(ppmr$Predator,unique(ppmr$Predator))]
+
+any(is.na(ppmr$habitat))
+##################################################
+############## Subset ############################
+##################################################
+
+ppmr.better <- ppmr %>% filter(Predator.quality.of.length.mass.conversion <5,
+                            Prey.quality.of.conversion.to.mass <5)
+
+ppmr.best <- ppmr %>% filter(Predator.quality.of.length.mass.conversion <4,
+                            Prey.quality.of.conversion.to.mass <4,
+                            !is.na(Individual.ID))
+```
+#######################
+##### Best Models #####
+#######################
+```{r}
+best.model.int <-  inla(log10(Prey.mass) ~ log10(Predator.mass)*Mean.annual.temp+
+                      SD.annual.temp +
+                      #f(log10(Pmass),model='rw2', diagonal=1e-5) + 
+                      f(Predator,model='iid') + 
+                      f(Geographic.location,model='iid')+
+                      f(Type.of.feeding.interaction,model='iid')+
+                      f(factor(Individual.ID),model='iid')+
+                      f(Order,model='iid')+
+                      f(Class,model='iid')+
+                      f(habitat,model='iid')+
+                      f(Family,model='iid')+
+                      #f(Specific.habitat,model='iid')+
+                      Depth +
+                      #Latitude + 
+                      Mean.PP,
+                    data = ppmr.best,
+                    control.compute = list(dic=TRUE,cpo=T),
+                    control.predictor = list(compute=T)
+)
+
+
+
+summary(best.model.int)
+plot(best.model.int)
+plot(best.model.int$summary.linear.predictor$`0.5quant`,log10(ppmr.best$Prey.mass))
+abline(a=0,b=1)
+
+-mean(log(best.model.int$cpo$cpo))
+hist(best.model.int$cpo$pit)
+hist(best.model.int$cpo$cpo)
+```
+
+#########################
+##### Better Models #####
+#########################
+
+```{r} 
+# 
+# better.model.int <-  inla(log10(Prey.mass) ~ log10(Predator.mass)*Mean.annual.temp+
+#                       SD.annual.temp +
+#                       #f(log10(Pmass),model='rw2', diagonal=1e-5) + 
+#                       f(Predator,model='iid') + 
+#                       f(Geographic.location,model='iid')+
+#                       f(Type.of.feeding.interaction,model='iid')+
+#                       f(factor(Individual.ID),model='iid')+
+#                       f(Order,model='iid')+
+#                       f(Class,model='iid')+
+#                       f(habitat,model='iid')+
+#                       f(Family,model='iid')+
+#                       #f(Specific.habitat,model='iid')+
+#                       Depth +
+#                       #Latitude + 
+#                       Mean.PP,
+#                     data = ppmr.better,
+#                     control.compute = list(dic=TRUE,cpo=T),
+#                     control.predictor = list(compute=T)
+# )
+# 
+# summary(better.model.int)
+# #plot(better.model.int)
+# plot(better.model.int$summary.linear.predictor$`0.5quant`,log10(ppmr.better$Prey.mass))
+# abline(a=0,b=1)
+# 
+# -mean(log(better.model.int$cpo$cpo))
+# hist(better.model.int$cpo$pit)
+
+```
+
+References
+====================================

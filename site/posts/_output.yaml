@@ -1,2 +1,2 @@
-html_fragment:
-    keep_md: true
+author: "Philipp Neubauer"
+output: md_document

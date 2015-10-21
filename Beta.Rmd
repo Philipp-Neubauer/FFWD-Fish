@@ -330,6 +330,28 @@ ggplot(mlobs,aes(x=value, fill=factor(tax))) +
 sds <- JM$BUGSoutput$sims.list[grepl('sd',names(JM$BUGSoutput$sims.list))]
 msd <- reshape2::melt(sds)
 
+msd <- msd %>% 
+  mutate(Factor = do.call('rbind',strsplit(L1,'sd.'))[,2]) %>%
+  group_by(Factor) %>%
+  summarise(means = median(value),
+            q1 = quantile(value,0.025),
+            q11 = quantile(value,0.25),
+            q33 = quantile(value,0.75),
+            q3 = quantile(value,0.975))
+  
+msd$Factor <- c('Class','Family','Feedtype','Geography/Study','Habitat','Individual','Order','Species')
+  
+msd$Factor <- factor(msd$Factor,levels = rev(c('Individual','Species','Family','Order','Class','Habitat','Geography/Study','Feedtype')))
+
+ggplot(msd) + 
+  geom_point(aes(x=Factor, y=means),size=4) + 
+  geom_linerange(aes(x=Factor, y=means,ymin=q1,ymax=q3),size=1) + 
+  geom_linerange(aes(x=Factor, y=means,ymin=q11,ymax=q33),size=2) + 
+  theme_classic() + 
+  coord_flip() + 
+  ylab(expression(Finite~population~variance~(log[10]~PPMR))) + 
+  xlab('Effect')
+  
 
 
 ob <- JM$BUGSoutput$sims.list[c('tau','betas','speciesmu','familymu','speciesmu','classmu')]
@@ -352,14 +374,37 @@ for (i in 1:length(slopes)){
   
 }
 
-plot(slopes,ddif,t='l',ylab=expression(Delta~log[10](PPMR)),xlab=expression(paste('Size spectrum slope ',lambda)))
+pdf('diff_vs_slope.pdf')
+par(mar=c(5,5,1,1))
+plot(slopes,ddif,t='l',ylab=expression(Delta~log[10]~PPMR),xlab=expression(paste('Size spectrum slope ',lambda)))
+dev.off()
 
-plot(xs,dens/max(dens),t='l',ylab='density',xlab=expression(Delta~log[10](PPMR)))
-lines(xs[xs>-2.5],xsc[xs>-2.5]/max(xsc[xs>-2.5]),t='l',col=1,lty=2)
-lines(xs,(dens/xsc)/max(dens/xsc),t='l',col=2)
+xsc <- (10^xs)^-2
+xsc1 <- (10^xs)^-1.5
+xsc2 <- (10^xs)^-2.5
 
+ddens <- tbl_df(data.frame(dens)) %>% 
+  mutate(`observed mean PPMR` = dens,
+         `preference, slope = 2`  = (dens/xsc)/max(dens/xsc),
+         `preference, slope = 1.5` = (dens/xsc1)/max(dens/xsc1),
+         `preference, slope = 2.5` = (dens/xsc2)/max(dens/xsc2),
+         `spectrum slope = 2`= xsc,
+         `spectrum slope = 1.5`= xsc1,
+         `spectrum slope = 2.5`= xsc2) %>%
+  select(-dens)
 
+mdens = reshape2::melt(ddens)
+mdens$xs <- xs
 
+ggplot(mdens) +
+  geom_line(aes(x=xs,y=value,col=variable)) +
+  theme_classic()+
+  scale_y_log10() + 
+  ylab(expression(log[10]~density))+
+  xlab(expression(log[10]~PPMR))+
+  scale_color_discrete('')
+
+ggsave('PPMR_pref_vs_obs.pdf',width = 8, height=6)
 
 
 colnames(ob$familymu) <- unique(ppmr.data$Family) 
