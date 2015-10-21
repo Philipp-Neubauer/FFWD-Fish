@@ -4,7 +4,7 @@ RMARKEDDOWN := $(RMARKDOWNSRC:.rmd=.md)
 .PHONY: watch site
 
 site: deps/sitehakyll/dist/build/ffwd-fish-site/ffwd-fish-site $(RMARKEDDOWN)
-	cd site && rm -r _cache && ../deps/sitehakyll/dist/build/ffwd-fish-site/ffwd-fish-site build
+	cd site && rm -rf _cache && ../deps/sitehakyll/dist/build/ffwd-fish-site/ffwd-fish-site build
 
 watch: deps/sitehakyll/dist/build/ffwd-fish-site/ffwd-fish-site $(RMARKEDDOWN)
 	cd site && ../deps/sitehakyll/dist/build/ffwd-fish-site/ffwd-fish-site watch
