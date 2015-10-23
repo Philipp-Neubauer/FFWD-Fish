@@ -1,6 +1,8 @@
 ---
 title: "Sources of variation in PPMRs"
 date: "20/10/2015"
+author: "Philipp Neubauer"
+output: md_document
 ---
 
 
@@ -22,9 +24,6 @@ Background
 ====================================
 
 Many size based models for marine ecosystems 
-
-I'll clo follow [@andrianakis:bayesian]
-
 
 ```{r }
 require(dplyr)
