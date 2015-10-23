@@ -10,16 +10,21 @@ This site requires haskell, ruby and R to build.
 
 ### Haskell part
 
-On Ubuntu ```apt-get install ghc cabal-install``` and on a mac
+On a mac
 (assuming you have [homebrew](http://brew.sh/))
-```brew install ghc cabal-install```. Then run:
+```brew install haskell-stack ghc cabal-install```. Then run:
 
-```
-cabal update
-cd site
-cabal sandbox init  # if you are on ubuntu you may have to skip this step
-cabal install --only-dependencies hakyll
-```
+On ubuntu
+``` wget -q -O- https://s3.amazonaws.com/download.fpcomplete.com/ubuntu/fpco.key | sudo apt-key add - ```
+
+On 14.04
+```echo 'deb http://download.fpcomplete.com/ubuntu/trusty stable main'|sudo tee /etc/apt/sources.list.d/fpco.list```
+
+On 12.04
+```echo 'deb http://download.fpcomplete.com/ubuntu/precise stable main'|sudo tee /etc/apt/sources.list.d/fpco.list```
+
+then
+```sudo apt-get update && sudo apt-get install stack -y```
 
 ### Ruby part
 
