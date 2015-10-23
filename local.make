@@ -25,8 +25,8 @@ deps/%/.docker: deps/%/Dockerfile deps/%/*
 	touch $@
 
 site/posts/%.md: site/posts/%.rmd deps/siter/.docker
-	$(if $(HASDOCKER),docker run --rm -u $$(id -u):$$(id -g) -v $$PWD/site/posts:/work -w /work ffwdfish/siter) \
-		Rscript -e 'require("rmarkdown"); rmarkdown::render("$(<F)")'
+	$(if $(HASDOCKER),docker run --rm -u $$(id -u):$$(id -g) -v $$PWD:/work -w /work ffwdfish/siter) \
+		Rscript -e 'require("rmarkdown"); rmarkdown::render("$(<)")'
 
 deploy: ../FFWD-Fish-gh-pages site
 ifeq (refs/heads/gh-pages,$(shell cd ../FFWD-Fish-gh-pages && git symbolic-ref HEAD))
