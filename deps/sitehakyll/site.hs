@@ -29,7 +29,10 @@ main = hakyll $ do
             >>= loadAndApplyTemplate "templates/default.html" defaultContext
             >>= relativizeUrls
 
-    match "posts/*.md" $ do
+    bibDependencies <- makePatternDependency "posts/include/biblio/bib/*.bib"
+    cslDependencies <- makePatternDependency "posts/include/biblio/csl/*.csl"
+    rulesExtraDependencies [bibDependencies, cslDependencies] $
+      match "posts/*.md" $ do
         route $ setExtension "html"
         compile $ pandocBiblioCompiler "posts/include/biblio/csl/ecology.csl" "posts/include/biblio/bib/FFF.bib"
             >>= loadAndApplyTemplate "templates/post.html"    postCtx
