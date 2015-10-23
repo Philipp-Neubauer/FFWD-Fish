@@ -1,24 +1,21 @@
 RMARKDOWNSRC := $(shell ls site/posts/*.rmd)
 RMARKEDDOWN := $(RMARKDOWNSRC:.rmd=.md)
-
+SITEBUILDER := $(shell cd deps/sitehakyll && stack path --local-install-root)/bin/ffwd-fish-site
 .PHONY: watch site
 
-site: deps/sitehakyll/dist/build/ffwd-fish-site/ffwd-fish-site $(RMARKEDDOWN)
-	cd site && rm -rf _cache && ../deps/sitehakyll/dist/build/ffwd-fish-site/ffwd-fish-site build
+site: $(SITEBUILDER) $(RMARKEDDOWN)
+	cd site && $^ build
 
-watch: deps/sitehakyll/dist/build/ffwd-fish-site/ffwd-fish-site $(RMARKEDDOWN)
-	cd site && ../deps/sitehakyll/dist/build/ffwd-fish-site/ffwd-fish-site watch
+watch: $(SITEBUILDER) $(RMARKEDDOWN)
+	cd site && $^ watch
 
-deps/sitehakyll/dist/build/ffwd-fish-site/ffwd-fish-site: 	deps/sitehakyll/site.hs \
+clean: $(SITEBUILDER)
+	cd site && $^ clean
+
+$(SITEBUILDER): deps/sitehakyll/site.hs \
 															deps/sitehakyll/ffwd-fish-site.cabal \
-															deps/sitehakyll/.cabal-sandbox/bin/hakyll-init
-	cd deps/sitehakyll && cabal build
-
-deps/sitehakyll/.cabal-sandbox/bin/hakyll-init: deps/sitehakyll/cabal.sandbox.config
-	cd deps/sitehakyll && cabal install --only-dependencies
-
-deps/sitehakyll/cabal.sandbox.config:
-	cd deps/sitehakyll && cabal sandbox init
+															deps/sitehakyll/stack.yaml
+	cd deps/sitehakyll && stack build
 
 site/posts/%.md: site/posts/%.rmd
 	Rscript -e 'require("rmarkdown"); rmarkdown::render("$(<)")'

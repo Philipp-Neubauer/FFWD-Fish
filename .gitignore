@@ -14,3 +14,4 @@
 cabal.sandbox.config
 .cabal-sandbox
 deps/sitehakyll/dist
+.stack-work
