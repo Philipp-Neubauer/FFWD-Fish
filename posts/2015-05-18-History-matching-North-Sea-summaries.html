@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>FFWD fish blog</title>
+        <link rel="stylesheet" type="text/css" href="../css/style.css" />
+    </head>
+    <body>
+        <header class="navigation">
+            <div class="navigation-wrapper">
+                <a href="javascript:void(0)" class="logo">
+                    <img src="../images/logo_Sam.png" alt="Logo Image">
+                </a>
+                <a href="javascript:void(0)" class="navigation-menu-button" id="js-mobile-menu">MENU</a>
+                <div class="nav">
+                    <ul id="js-navigation-menu" class="navigation-menu show">
+                        <li class="nav-link"><a href="../index.html">Home</a></li>
+                        <li class="nav-link"><a href="../archive.html">Archive</a></li>
+                        <li class="nav-link"><a href="../about.html">About</a></li>
+                        <li class="nav-link"><a href="../people.html">People</a></li>
+                        <li class="nav-link"><a href="../contact.html">Contact</a></li>
+                    </ul>
+                </div>
+            </div>
+        </header>
+        <main>
+            
+            <div class="container">
+            <div class="info">
+    Posted on May 18, 2015
+    
+</div>
+
+<h1 id="history-matching-size-based-models---a-real-world-example">History matching size-based models - a real world example</h1>
+<p>Philipp Neubauer<br />
+18/05/2015</p>
+<h1 id="history-matching-the-north-sea-size-spectrum">History matching the North Sea size-spectrum</h1>
+<p>This approach will rely on (presumably) known growth parameters, biomass and catch information over an aggregated period to perform history matching for the north sea model. Using Nis' code to pre-calculate these:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">script_dir &lt;-<span class="st"> '~/Work/FFWD-Fish/NorthSea/nis_scripts/'</span>
+data_dir &lt;-<span class="st"> '~/Work/FFWD-Fish/NorthSea/'</span>
+
+<span class="co"># Use north east continental shelf (LME number = 7)</span>
+<span class="kw">source</span>(<span class="kw">paste0</span>(script_dir,<span class="st">'Biomass_from_RAMv3_PN.R'</span>))
+Bstate &lt;-<span class="st"> </span><span class="kw">Biomass_from_RAMv3</span>(<span class="dt">LMEnumber =</span> <span class="dv">22</span>,data_dir,script_dir)</code></pre></div>
+<pre><code>## Loading required package: RPostgreSQL</code></pre>
+<pre><code>## Warning: package 'RPostgreSQL' was built under R version 3.1.3</code></pre>
+<pre><code>## Loading required package: DBI
+## Loading required package: openxlsx</code></pre>
+<pre><code>## Warning: package 'openxlsx' was built under R version 3.1.3</code></pre>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">units &lt;-<span class="st"> </span>Bstate[[<span class="dv">2</span>]]
+state &lt;-<span class="st"> </span>Bstate[[<span class="dv">1</span>]]
+
+naFun &lt;-<span class="st"> </span>function(fun) function(x) <span class="kw">fun</span>(x,<span class="dt">na.rm=</span>T) 
+naSum &lt;-<span class="st"> </span><span class="kw">naFun</span>(sum)
+naMean &lt;-<span class="st"> </span><span class="kw">naFun</span>(mean)
+
+new_state &lt;-<span class="st"> </span>state %&gt;%<span class="st"> </span>
+<span class="st">  </span><span class="kw">group_by</span>(cnames) %&gt;%
+<span class="st">  </span><span class="kw">mutate</span>(<span class="dt">ssbio =</span> <span class="kw">ifelse</span>(!<span class="kw">is.nan</span>(Biomass),Biomass,SSB),
+         <span class="dt">tcatch =</span> <span class="kw">ifelse</span>(!<span class="kw">is.nan</span>(Catch),Catch,Landings)) %&gt;%
+<span class="st">  </span><span class="kw">summarise</span>(<span class="dt">ssbio =</span> <span class="kw">sum</span>(ssbio),
+            <span class="dt">tcatch =</span> <span class="kw">sum</span>(tcatch),
+            <span class="dt">F0 =</span> <span class="kw">naMean</span>(F0),
+            <span class="dt">M =</span> <span class="kw">naMean</span>(M),
+            <span class="dt">Fmsy =</span> <span class="kw">naMean</span>(Fmsy),
+            <span class="dt">t0 =</span> <span class="kw">naMean</span>(t0),
+            <span class="dt">wInf =</span> <span class="kw">naMean</span>(wInf),
+            <span class="dt">k =</span> <span class="kw">naMean</span>(k))
+
+<span class="kw">rownames</span>(new_state) &lt;-<span class="st"> </span>new_state[[<span class="st">'cnames'</span>]]
+
+<span class="co"># From Blanchard et al 2014 </span>
+new_state[<span class="st">'Atlantic cod'</span>,<span class="st">'k'</span>] &lt;-<span class="st"> </span><span class="fl">0.216</span> 
+new_state[<span class="st">'Herring'</span>,<span class="st">'k'</span>] &lt;-<span class="st"> </span><span class="fl">0.606</span>
+new_state[<span class="st">'Norway pout'</span>,<span class="st">'k'</span>] &lt;-<span class="st"> </span><span class="fl">0.849</span>
+new_state[<span class="st">'European Plaice'</span>,<span class="st">'k'</span>] &lt;-<span class="st"> </span><span class="fl">0.12</span> <span class="co"># Plaice</span>
+new_state[<span class="st">'Sand lance'</span>,<span class="st">'k'</span>] &lt;-<span class="st"> </span><span class="dv">1</span> <span class="co"># Sand eel</span>
+new_state[<span class="st">'common European sole'</span>,<span class="st">'k'</span>] &lt;-<span class="st">  </span><span class="fl">0.284</span> <span class="co"># Sole</span>
+new_state[<span class="st">'Sprat'</span>,<span class="st">'k'</span>] &lt;-<span class="st"> </span><span class="fl">0.681</span> <span class="co"># Sprat</span>
+new_state[<span class="st">'Pollock'</span>,<span class="st">'k'</span>] &lt;-<span class="st"> </span><span class="fl">0.175</span> <span class="co"># Pollock (Saithe)</span>
+new_state[<span class="st">'Haddock'</span>,<span class="st">'k'</span>] &lt;-<span class="st"> </span><span class="fl">0.271</span> <span class="co"># Haddock</span>
+new_state[<span class="st">'Whiting'</span>,<span class="st">'k'</span>] &lt;-<span class="st"> </span><span class="fl">0.323</span> <span class="co"># Whiting </span>
+
+new_state[<span class="st">'Sand lance'</span>,<span class="st">'wInf'</span>] &lt;-<span class="st"> </span><span class="dv">36</span>
+new_state[<span class="st">'Whiting'</span>,<span class="st">'wInf'</span>]  &lt;-<span class="st"> </span><span class="dv">1192</span>
+new_state$t0 &lt;-<span class="st"> </span><span class="dv">0</span>
+
+<span class="co"># Why no catch information on Sprat??? Add from assessment</span>
+new_state[<span class="st">'Sprat'</span>,<span class="st">'Fmsy'</span>] &lt;-<span class="st"> </span><span class="fl">1.3</span>
+new_state[<span class="st">'Sprat'</span>,<span class="st">'tcatch'</span>] &lt;-<span class="st"> </span><span class="dv">1752000</span>
+
+<span class="kw">ggplot</span>(<span class="dt">data =</span> new_state, <span class="kw">aes</span>(<span class="dt">x =</span> wInf, <span class="dt">y =</span> ssbio))+
+<span class="st">  </span><span class="kw">geom_point</span>(<span class="dt">color=</span><span class="st">'blue'</span>)+
+<span class="st">  </span><span class="kw">scale_y_log10</span>()+
+<span class="st">  </span><span class="kw">scale_x_log10</span>()+
+<span class="st">  </span><span class="kw">theme_bw</span>()+
+<span class="st">  </span><span class="kw">geom_smooth</span>(<span class="dt">method =</span> <span class="st">'lm'</span>, <span class="dt">se =</span> T)</code></pre></div>
+<div class="figure">
+<img src="2015-05-18-History-matching-North-Sea-summaries_files/figure-html/unnamed-chunk-2-1.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co"># Look at the system wide fishing mortality </span>
+
+<span class="kw">ggplot</span>(<span class="dt">data =</span> state, <span class="kw">aes</span>(<span class="dt">x =</span> wInf,<span class="dt">y=</span>F0))+
+<span class="st">  </span><span class="kw">geom_point</span>()+
+<span class="st">  </span><span class="kw">scale_x_log10</span>()+
+<span class="st">  </span><span class="kw">geom_smooth</span>(<span class="dt">method =</span> <span class="st">'lm'</span>, <span class="dt">se =</span> T)+
+<span class="st">  </span><span class="kw">theme_bw</span>()</code></pre></div>
+<pre><code>## Warning: Removed 5 rows containing missing values (stat_smooth).</code></pre>
+<pre><code>## Warning: Removed 5 rows containing missing values (geom_point).</code></pre>
+<div class="figure">
+<img src="2015-05-18-History-matching-North-Sea-summaries_files/figure-html/unnamed-chunk-2-2.png" alt />
+
+</div>
+<p>FOr the history matching, I need a function that</p>
+<div id="references" class="references">
+
+</div>
+
+            </div>
+        </main>
+        <footer>
+        </footer>
+        <script src="//code.jquery.com/jquery-2.1.3.min.js"></script>
+        <script>
+        $(document).ready(function() {
+        $('#js-navigation-menu').removeClass("show");
+        $('#js-mobile-menu').on('click', function(e) {
+        e.preventDefault();
+        $('#js-navigation-menu').slideToggle(function(){
+        if($('#js-navigation-menu').is(':hidden')) {
+        $('#js-navigation-menu').removeAttr('style');
+        }
+        });
+        });
+        });
+        </script>
+    </body>
+</html>

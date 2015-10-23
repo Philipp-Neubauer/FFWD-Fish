@@ -1,0 +1,320 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>FFWD fish blog</title>
+        <link rel="stylesheet" type="text/css" href="../css/style.css" />
+    </head>
+    <body>
+        <header class="navigation">
+            <div class="navigation-wrapper">
+                <a href="javascript:void(0)" class="logo">
+                    <img src="../images/logo_Sam.png" alt="Logo Image">
+                </a>
+                <a href="javascript:void(0)" class="navigation-menu-button" id="js-mobile-menu">MENU</a>
+                <div class="nav">
+                    <ul id="js-navigation-menu" class="navigation-menu show">
+                        <li class="nav-link"><a href="../index.html">Home</a></li>
+                        <li class="nav-link"><a href="../archive.html">Archive</a></li>
+                        <li class="nav-link"><a href="../about.html">About</a></li>
+                        <li class="nav-link"><a href="../people.html">People</a></li>
+                        <li class="nav-link"><a href="../contact.html">Contact</a></li>
+                    </ul>
+                </div>
+            </div>
+        </header>
+        <main>
+            
+            <div class="container">
+            <div class="info">
+    Posted on October 20, 2015
+    
+        by "Philipp Neubauer"
+    
+</div>
+
+<h1 id="background">Background</h1>
+<p>Many size based models for marine ecosystems</p>
+<p>I’ll clo follow <span class="citation">[@andrianakis:bayesian]</span></p>
+<pre class="sourceCode r"><code class="sourceCode r"><span class="kw">require</span>(dplyr)
+<span class="kw">require</span>(INLA)
+
+ppmr.tab &lt;-<span class="kw">read.csv</span>(<span class="st">'include/PPMR_files/PPMR.csv'</span>,<span class="dt">header=</span>T,<span class="dt">na.strings =</span> <span class="st">'n/a'</span>,<span class="dt">stringsAsFactors =</span> F)
+ppmr &lt;-<span class="st"> </span><span class="kw">tbl_df</span>(ppmr.tab)
+
+ppmr$Prey.mass[ppmr$Prey.mass.unit==<span class="st">'mg'</span>] &lt;-<span class="st"> </span>ppmr$Prey.mass[ppmr$Prey.mass.unit==<span class="st">'mg'</span>] /<span class="dv">1000</span>
+
+ppmr$Latitude &lt;-<span class="st"> </span><span class="kw">as.numeric</span>(<span class="kw">substr</span>(ppmr$Latitude,<span class="dt">start =</span> <span class="dv">1</span>,<span class="dt">stop =</span> <span class="dv">2</span>))
+ppmr &lt;-<span class="st"> </span>ppmr %&gt;%<span class="st"> </span><span class="kw">filter</span>(!Type.of.feeding.interaction %in%<span class="st"> </span><span class="kw">c</span>(<span class="st">'insectivorous'</span>,<span class="st">'predacious/piscivorous'</span>))
+
+std &lt;-<span class="st"> </span>function(x) (x-<span class="kw">mean</span>(x))/(<span class="dv">2</span>*<span class="kw">sd</span>(x))
+ppmr &lt;-<span class="st"> </span>ppmr %&gt;%<span class="st"> </span><span class="kw">mutate</span>(<span class="dt">Mean.annual.temp =</span> <span class="kw">std</span>(Mean.annual.temp),
+                <span class="dt">SD.annual.temp =</span> <span class="kw">std</span>(SD.annual.temp),
+                <span class="dt">Latitude =</span> <span class="kw">std</span>(Latitude),
+                <span class="dt">Mean.PP =</span> <span class="kw">std</span>(Mean.PP),
+                <span class="dt">Depth =</span> <span class="kw">std</span>(Depth),
+                <span class="dt">Pmass=</span>Predator.mass)
+
+################################
+###### Taxise ##################
+################################
+
+<span class="kw">require</span>(<span class="st">&quot;taxize&quot;</span>)
+
+<span class="co"># taxonomy of unresolved names</span>
+us &lt;-<span class="st"> </span><span class="kw">unique</span>(ppmr$Predator)
+us[us==<span class="st">'Urophysis chuss'</span>] &lt;-<span class="st"> 'Urophycis chuss'</span>
+us[us==<span class="st">'Leucoraja  fullonica   '</span>] &lt;-<span class="st"> 'Leucoraja  fullonica'</span>
+us[us==<span class="st">'Myoxocephalus octodecimspinosus'</span>] &lt;-<span class="st"> 'Myoxocephalus octodecemspinosus'</span>
+
+trim &lt;-<span class="st"> </span>function (x) <span class="kw">gsub</span>(<span class="st">&quot;^</span><span class="ch">\\</span><span class="st">s+|</span><span class="ch">\\</span><span class="st">s+$&quot;</span>, <span class="st">&quot;&quot;</span>, x)
+us &lt;-<span class="kw">trim</span>(us)
+nus&lt;-<span class="st"> </span><span class="kw">strsplit</span>(us,<span class="dt">split =</span> <span class="st">' sp.'</span>,<span class="dt">fixed=</span>T)
+
+
+cs &lt;-<span class="st"> </span><span class="kw">classification</span>(nus, <span class="dt">db =</span> <span class="st">'itis'</span>)
+
+<span class="co"># check names for un-resolved names</span>
+urn &lt;-<span class="st"> </span><span class="kw">which</span>(<span class="kw">unlist</span>(<span class="kw">lapply</span>(cs,length))==<span class="dv">1</span>)
+csu &lt;-<span class="st"> </span><span class="kw">classification</span>(us[urn], <span class="dt">db =</span> <span class="st">'col'</span>,<span class="dt">rows=</span><span class="dv">1</span>)
+cs[urn] &lt;-<span class="st"> </span>csu
+
+urn2 &lt;-<span class="st"> </span><span class="kw">which</span>(<span class="kw">unlist</span>(<span class="kw">lapply</span>(cs,length))==<span class="dv">1</span>)
+cuss &lt;-<span class="st"> </span><span class="kw">classification</span>(us[urn2], <span class="dt">db =</span> <span class="st">'ncbi'</span>,<span class="dt">rows=</span><span class="dv">1</span>)
+cs[urn2] &lt;-<span class="st"> </span>cuss 
+
+ppmr$Class &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(cs,function(x) x$name[x$rank==<span class="st">'Class'</span> |x$rank==<span class="st">'class'</span> ]))[<span class="kw">match</span>(ppmr$Predator,<span class="kw">unique</span>(ppmr$Predator))]
+
+ppmr$Order &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(cs,function(x) x$name[x$rank==<span class="st">'Order'</span> |<span class="st"> </span>x$rank==<span class="st">'order'</span>]))[<span class="kw">match</span>(ppmr$Predator,<span class="kw">unique</span>(ppmr$Predator))]
+
+ppmr$Family &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(cs,function(x) x$name[x$rank==<span class="st">'Family'</span> |<span class="st"> </span>x$rank==<span class="st">'family'</span>]))[<span class="kw">match</span>(ppmr$Predator,<span class="kw">unique</span>(ppmr$Predator))]
+
+##################################################
+################ Habitats ######################## 
+##################################################
+
+<span class="co"># get habitat and taxonomy from fishbase and other DBs</span>
+<span class="kw">require</span>(rfishbase)
+
+fish.data &lt;-<span class="st"> </span><span class="kw">loadCache</span>()
+
+<span class="co"># %in% doesn't work, need grepl as some ScientificNames don't match - makes it really slow</span>
+match_tax &lt;-<span class="st"> </span>function (species, <span class="dt">fish.data =</span> <span class="ot">NULL</span>, <span class="dt">path =</span> <span class="ot">NULL</span>) {
+   
+    if (<span class="kw">is.null</span>(fish.data)) 
+        fish.data &lt;-<span class="st"> </span><span class="kw">loadCache</span>(<span class="dt">path =</span> path)
+        
+    matches &lt;-<span class="st"> </span><span class="kw">vector</span>(<span class="st">'list'</span>,<span class="kw">length</span>(species))
+    for (i in <span class="dv">1</span>:<span class="kw">length</span>(species)){
+    matches[[i]] &lt;-<span class="st"> </span><span class="kw">which</span>(<span class="kw">sapply</span>(fish.data, function(x) <span class="kw">grepl</span>(species[i],x$ScientificName) |<span class="st"> </span><span class="kw">grepl</span>(species[i],x$Genus) |<span class="st"> </span><span class="kw">grepl</span>(species[i],x$Family)|<span class="st"> </span><span class="kw">grepl</span>(species[i],x$Class)))
+    }
+    <span class="kw">return</span>(matches)
+}
+
+
+sp_match &lt;-<span class="st"> </span>parallel::<span class="kw">mclapply</span>(nus,match_tax,<span class="dt">mc.cores=</span><span class="dv">4</span>)
+<span class="co">#save(sp_match, file = 'fb_species_match.rda')</span>
+<span class="co">#load(file = 'fb_species_match.rda')</span>
+
+sp_match &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'c'</span>,sp_match)
+
+<span class="co"># get habitat for FB species. For higher taxonomic groupings, </span>
+
+habitats &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'c'</span>,<span class="kw">lapply</span>(sp_match,function(x) {
+  if(<span class="kw">length</span>(x)&gt;<span class="dv">0</span>){
+    habitats&lt;-<span class="st"> </span><span class="kw">list</span>()
+    for (i in <span class="dv">1</span>:<span class="kw">length</span>(x))
+      habitats[[i]] &lt;-<span class="st"> </span>fish.data[[x[i]]]$habitat
+    
+    habitats &lt;-<span class="st"> </span><span class="kw">table</span>(<span class="kw">unlist</span>(<span class="kw">lapply</span>(habitats,function(y) {
+      if(!<span class="kw">is.null</span>(y)) <span class="kw">strsplit</span>(y,<span class="st">'[;]'</span>)[[<span class="dv">1</span>]][<span class="dv">1</span>]
+      })))
+    habitat&lt;-<span class="kw">names</span>(<span class="kw">which.max</span>(habitats))
+    
+    } else {
+    habitat &lt;-<span class="st"> </span><span class="ot">NA</span>
+    }
+  habitat
+  }
+)
+)
+
+<span class="kw">unique</span>(ppmr$Predator)[<span class="kw">is.na</span>(habitats)]</code></pre>
+<pre><code>## [1] &quot;Loligo pealeii&quot;          &quot;Notolepis rissoi&quot;       
+## [3] &quot;Paralichthys oblongus&quot;   &quot;Raja erinacea&quot;          
+## [5] &quot;Gilbertidia sigalutes&quot;   &quot;Raja ocellata&quot;          
+## [7] &quot;Leucoraja  fullonica   &quot; &quot;Raja naevus&quot;            
+## [9] &quot;Nototheniops larseni&quot;</code></pre>
+<pre class="sourceCode r"><code class="sourceCode r">habitats[<span class="kw">is.na</span>(habitats)] &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="st">'pelagic-neritic'</span>,<span class="st">'bathypelagic'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'benthopelagic'</span>)
+
+ppmr$habitat &lt;-<span class="st"> </span>habitats[<span class="kw">match</span>(ppmr$Predator,<span class="kw">unique</span>(ppmr$Predator))]
+
+<span class="kw">any</span>(<span class="kw">is.na</span>(ppmr$habitat))</code></pre>
+<pre><code>## [1] FALSE</code></pre>
+<pre class="sourceCode r"><code class="sourceCode r">##################################################
+############## Subset ############################
+##################################################
+
+ppmr.better &lt;-<span class="st"> </span>ppmr %&gt;%<span class="st"> </span><span class="kw">filter</span>(Predator.quality.of.length.mass.conversion &lt;<span class="dv">5</span>,
+                            Prey.quality.of.conversion.to.mass &lt;<span class="dv">5</span>)
+
+ppmr.best &lt;-<span class="st"> </span>ppmr %&gt;%<span class="st"> </span><span class="kw">filter</span>(Predator.quality.of.length.mass.conversion &lt;<span class="dv">4</span>,
+                            Prey.quality.of.conversion.to.mass &lt;<span class="dv">4</span>,
+                            !<span class="kw">is.na</span>(Individual.ID))</code></pre>
+<p id="section"></p>
+<h5 id="best-models">Best Models</h5>
+<p id="section-1"></p>
+<pre class="sourceCode r"><code class="sourceCode r">best.model.int &lt;-<span class="st">  </span><span class="kw">inla</span>(<span class="kw">log10</span>(Prey.mass) ~<span class="st"> </span><span class="kw">log10</span>(Predator.mass)*Mean.annual.temp+
+<span class="st">                      </span>SD.annual.temp +
+<span class="st">                      </span><span class="co">#f(log10(Pmass),model='rw2', diagonal=1e-5) + </span>
+<span class="st">                      </span><span class="kw">f</span>(Predator,<span class="dt">model=</span><span class="st">'iid'</span>) +<span class="st"> </span>
+<span class="st">                      </span><span class="kw">f</span>(Geographic.location,<span class="dt">model=</span><span class="st">'iid'</span>)+
+<span class="st">                      </span><span class="kw">f</span>(Type.of.feeding.interaction,<span class="dt">model=</span><span class="st">'iid'</span>)+
+<span class="st">                      </span><span class="kw">f</span>(<span class="kw">factor</span>(Individual.ID),<span class="dt">model=</span><span class="st">'iid'</span>)+
+<span class="st">                      </span><span class="kw">f</span>(Order,<span class="dt">model=</span><span class="st">'iid'</span>)+
+<span class="st">                      </span><span class="kw">f</span>(Class,<span class="dt">model=</span><span class="st">'iid'</span>)+
+<span class="st">                      </span><span class="kw">f</span>(habitat,<span class="dt">model=</span><span class="st">'iid'</span>)+
+<span class="st">                      </span><span class="kw">f</span>(Family,<span class="dt">model=</span><span class="st">'iid'</span>)+
+<span class="st">                      </span><span class="co">#f(Specific.habitat,model='iid')+</span>
+<span class="st">                      </span>Depth +
+<span class="st">                      </span><span class="co">#Latitude + </span>
+<span class="st">                      </span>Mean.PP,
+                    <span class="dt">data =</span> ppmr.best,
+                    <span class="dt">control.compute =</span> <span class="kw">list</span>(<span class="dt">dic=</span><span class="ot">TRUE</span>,<span class="dt">cpo=</span>T),
+                    <span class="dt">control.predictor =</span> <span class="kw">list</span>(<span class="dt">compute=</span>T)
+)
+
+
+
+<span class="kw">summary</span>(best.model.int)</code></pre>
+<pre><code>## 
+## Call:
+## c(&quot;inla(formula = log10(Prey.mass) ~ log10(Predator.mass) * Mean.annual.temp + &quot;,  &quot;    SD.annual.temp + f(Predator, model = \&quot;iid\&quot;) + f(Geographic.location, &quot;,  &quot;    model = \&quot;iid\&quot;) + f(Type.of.feeding.interaction, model = \&quot;iid\&quot;) + &quot;,  &quot;    f(factor(Individual.ID), model = \&quot;iid\&quot;) + f(Order, model = \&quot;iid\&quot;) + &quot;,  &quot;    f(Class, model = \&quot;iid\&quot;) + f(habitat, model = \&quot;iid\&quot;) + f(Family, &quot;,  &quot;    model = \&quot;iid\&quot;) + Depth + Mean.PP, data = ppmr.best, control.compute = list(dic = TRUE, &quot;,  &quot;    cpo = T), control.predictor = list(compute = T))&quot;)
+## 
+## Time used:
+##  Pre-processing    Running inla Post-processing           Total 
+##          1.7319        187.6226          1.4964        190.8509 
+## 
+## Fixed effects:
+##                                          mean     sd 0.025quant 0.5quant
+## (Intercept)                           -2.2161 0.4319    -3.0810  -2.2107
+## log10(Predator.mass)                   0.8738 0.0457     0.7839   0.8738
+## Mean.annual.temp                       1.1605 0.8385    -0.5599   1.1797
+## SD.annual.temp                         0.1534 1.0431    -1.8260   0.1236
+## Depth                                 -1.2168 0.7080    -2.5252  -1.2509
+## Mean.PP                               -0.7346 0.3482    -1.4277  -0.7340
+## log10(Predator.mass):Mean.annual.temp  0.1788 0.0554     0.0700   0.1787
+##                                       0.975quant    mode kld
+## (Intercept)                              -1.3812 -2.1998   0
+## log10(Predator.mass)                      0.9633  0.8739   0
+## Mean.annual.temp                          2.7667  1.2101   0
+## SD.annual.temp                            2.2997  0.0643   0
+## Depth                                     0.3028 -1.3035   0
+## Mean.PP                                  -0.0488 -0.7337   0
+## log10(Predator.mass):Mean.annual.temp     0.2875  0.1787   0
+## 
+## Random effects:
+## Name	  Model
+##  Predator   IID model 
+## Geographic.location   IID model 
+## Type.of.feeding.interaction   IID model 
+## factor(Individual.ID)   IID model 
+## Order   IID model 
+## Class   IID model 
+## habitat   IID model 
+## Family   IID model 
+## 
+## Model hyperparameters:
+##                                                mean        sd 0.025quant
+## Precision for the Gaussian observations       7.481 1.174e-01      7.259
+## Precision for Predator                        4.936 2.792e+00      1.096
+## Precision for Geographic.location            10.052 7.017e+00      1.649
+## Precision for Type.of.feeding.interaction   551.834 5.664e+02     53.335
+## Precision for factor(Individual.ID)           4.930 2.642e-01      4.443
+## Precision for Order                       14821.898 1.763e+04    931.633
+## Precision for Class                       17574.134 1.847e+04   1219.887
+## Precision for habitat                     20047.572 1.933e+04   1237.363
+## Precision for Family                          1.540 7.753e-01      0.620
+##                                            0.5quant 0.975quant     mode
+## Precision for the Gaussian observations       7.477      7.720    7.466
+## Precision for Predator                        4.449     11.590    3.060
+## Precision for Geographic.location             8.446     27.815    4.734
+## Precision for Type.of.feeding.interaction   385.571   2044.619  148.220
+## Precision for factor(Individual.ID)           4.918      5.480    4.890
+## Precision for Order                        9428.148  61373.577 2492.628
+## Precision for Class                       12050.185  66670.535 3337.375
+## Precision for habitat                     14356.244  70929.049 3279.316
+## Precision for Family                          1.350      3.547    1.062
+## 
+## Expected number of effective parameters(std dev): 1038.19(11.56)
+## Number of equivalent replicates : 9.337 
+## 
+## Deviance Information Criterion: 9044.72
+## Effective number of parameters: 1038.96
+## 
+## Marginal Likelihood:  -5308.91 
+## CPO and PIT are computed
+## 
+## Posterior marginals for linear predictor and fitted values computed</code></pre>
+<pre class="sourceCode r"><code class="sourceCode r"><span class="kw">plot</span>(best.model.int)
+<span class="kw">plot</span>(best.model.int$summary.linear.predictor$<span class="st">`</span><span class="dt">0.5quant</span><span class="st">`</span>,<span class="kw">log10</span>(ppmr.best$Prey.mass))
+<span class="kw">abline</span>(<span class="dt">a=</span><span class="dv">0</span>,<span class="dt">b=</span><span class="dv">1</span>)
+
+-<span class="kw">mean</span>(<span class="kw">log</span>(best.model.int$cpo$cpo))</code></pre>
+<pre><code>## [1] 0.4970614</code></pre>
+<pre class="sourceCode r"><code class="sourceCode r"><span class="kw">hist</span>(best.model.int$cpo$pit)
+<span class="kw">hist</span>(best.model.int$cpo$cpo)</code></pre>
+<p id="section-2"></p>
+<h5 id="better-models">Better Models</h5>
+<p id="section-3"></p>
+<pre class="sourceCode r"><code class="sourceCode r"><span class="co"># </span>
+<span class="co"># better.model.int &lt;-  inla(log10(Prey.mass) ~ log10(Predator.mass)*Mean.annual.temp+</span>
+<span class="co">#                       SD.annual.temp +</span>
+<span class="co">#                       #f(log10(Pmass),model='rw2', diagonal=1e-5) + </span>
+<span class="co">#                       f(Predator,model='iid') + </span>
+<span class="co">#                       f(Geographic.location,model='iid')+</span>
+<span class="co">#                       f(Type.of.feeding.interaction,model='iid')+</span>
+<span class="co">#                       f(factor(Individual.ID),model='iid')+</span>
+<span class="co">#                       f(Order,model='iid')+</span>
+<span class="co">#                       f(Class,model='iid')+</span>
+<span class="co">#                       f(habitat,model='iid')+</span>
+<span class="co">#                       f(Family,model='iid')+</span>
+<span class="co">#                       #f(Specific.habitat,model='iid')+</span>
+<span class="co">#                       Depth +</span>
+<span class="co">#                       #Latitude + </span>
+<span class="co">#                       Mean.PP,</span>
+<span class="co">#                     data = ppmr.better,</span>
+<span class="co">#                     control.compute = list(dic=TRUE,cpo=T),</span>
+<span class="co">#                     control.predictor = list(compute=T)</span>
+<span class="co"># )</span>
+<span class="co"># </span>
+<span class="co"># summary(better.model.int)</span>
+<span class="co"># #plot(better.model.int)</span>
+<span class="co"># plot(better.model.int$summary.linear.predictor$`0.5quant`,log10(ppmr.better$Prey.mass))</span>
+<span class="co"># abline(a=0,b=1)</span>
+<span class="co"># </span>
+<span class="co"># -mean(log(better.model.int$cpo$cpo))</span>
+<span class="co"># hist(better.model.int$cpo$pit)</span></code></pre>
+<h1 id="references">References</h1>
+
+            </div>
+        </main>
+        <footer>
+        </footer>
+        <script src="//code.jquery.com/jquery-2.1.3.min.js"></script>
+        <script>
+        $(document).ready(function() {
+        $('#js-navigation-menu').removeClass("show");
+        $('#js-mobile-menu').on('click', function(e) {
+        e.preventDefault();
+        $('#js-navigation-menu').slideToggle(function(){
+        if($('#js-navigation-menu').is(':hidden')) {
+        $('#js-navigation-menu').removeAttr('style');
+        }
+        });
+        });
+        });
+        </script>
+    </body>
+</html>

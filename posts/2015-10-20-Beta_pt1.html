@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>FFWD fish blog</title>
+        <link rel="stylesheet" type="text/css" href="../css/style.css" />
+    </head>
+    <body>
+        <header class="navigation">
+            <div class="navigation-wrapper">
+                <a href="javascript:void(0)" class="logo">
+                    <img src="../images/logo_Sam.png" alt="Logo Image">
+                </a>
+                <a href="javascript:void(0)" class="navigation-menu-button" id="js-mobile-menu">MENU</a>
+                <div class="nav">
+                    <ul id="js-navigation-menu" class="navigation-menu show">
+                        <li class="nav-link"><a href="../index.html">Home</a></li>
+                        <li class="nav-link"><a href="../archive.html">Archive</a></li>
+                        <li class="nav-link"><a href="../about.html">About</a></li>
+                        <li class="nav-link"><a href="../people.html">People</a></li>
+                        <li class="nav-link"><a href="../contact.html">Contact</a></li>
+                    </ul>
+                </div>
+            </div>
+        </header>
+        <main>
+            
+            <div class="container">
+            <div class="info">
+    Posted on October 20, 2015
+    
+</div>
+
+<h1 id="background">Background</h1>
+<p>Many size-spectrum models for marine ecosystems are based on size specific predation. It seems that most recent theoretical/simulation papers have used a value of <em>β</em> = 100 for <span class="citation">(<span class="citeproc-not-found" data-reference-id="barnes"><strong>???</strong></span>_global_2010)</span></p>
+<pre><code>require(dplyr)
+require(INLA)
+
+ppmr.tab &lt;-read.csv('include/PPMR_files/PPMR.csv',header=T,na.strings = 'n/a',stringsAsFactors = F)
+ppmr &lt;- tbl_df(ppmr.tab)
+
+ppmr$Prey.mass[ppmr$Prey.mass.unit=='mg'] &lt;- ppmr$Prey.mass[ppmr$Prey.mass.unit=='mg'] /1000
+
+ppmr$Latitude &lt;- as.numeric(substr(ppmr$Latitude,start = 1,stop = 2))
+ppmr &lt;- ppmr %&gt;% filter(!Type.of.feeding.interaction %in% c('insectivorous','predacious/piscivorous'))
+
+std &lt;- function(x) (x-mean(x))/(2*sd(x))
+ppmr &lt;- ppmr %&gt;% mutate(Mean.annual.temp = std(Mean.annual.temp),
+                SD.annual.temp = std(SD.annual.temp),
+                Latitude = std(Latitude),
+                Mean.PP = std(Mean.PP),
+                Depth = std(Depth),
+                Pmass=Predator.mass)
+
+################################
+###### Taxise ##################
+################################
+
+require(&quot;taxize&quot;)
+
+# taxonomy of unresolved names
+us &lt;- unique(ppmr$Predator)
+us[us=='Urophysis chuss'] &lt;- 'Urophycis chuss'
+us[us=='Leucoraja  fullonica   '] &lt;- 'Leucoraja  fullonica'
+us[us=='Myoxocephalus octodecimspinosus'] &lt;- 'Myoxocephalus octodecemspinosus'
+
+trim &lt;- function (x) gsub(&quot;^\\s+|\\s+$&quot;, &quot;&quot;, x)
+us &lt;-trim(us)
+nus&lt;- strsplit(us,split = ' sp.',fixed=T)
+
+
+cs &lt;- classification(nus, db = 'itis')
+
+# check names for un-resolved names
+urn &lt;- which(unlist(lapply(cs,length))==1)
+csu &lt;- classification(us[urn], db = 'col',rows=1)
+cs[urn] &lt;- csu
+
+urn2 &lt;- which(unlist(lapply(cs,length))==1)
+cuss &lt;- classification(us[urn2], db = 'ncbi',rows=1)
+cs[urn2] &lt;- cuss 
+
+ppmr$Class &lt;- unlist(lapply(cs,function(x) x$name[x$rank=='Class' |x$rank=='class' ]))[match(ppmr$Predator,unique(ppmr$Predator))]
+
+ppmr$Order &lt;- unlist(lapply(cs,function(x) x$name[x$rank=='Order' | x$rank=='order']))[match(ppmr$Predator,unique(ppmr$Predator))]
+
+ppmr$Family &lt;- unlist(lapply(cs,function(x) x$name[x$rank=='Family' | x$rank=='family']))[match(ppmr$Predator,unique(ppmr$Predator))]
+
+##################################################
+################ Habitats ######################## 
+##################################################
+
+# get habitat and taxonomy from fishbase and other DBs
+require(rfishbase)
+
+fish.data &lt;- loadCache()
+
+# %in% doesn't work, need grepl as some ScientificNames don't match - makes it really slow
+match_tax &lt;- function (species, fish.data = NULL, path = NULL) {
+   
+    if (is.null(fish.data)) 
+        fish.data &lt;- loadCache(path = path)
+        
+    matches &lt;- vector('list',length(species))
+    for (i in 1:length(species)){
+    matches[[i]] &lt;- which(sapply(fish.data, function(x) grepl(species[i],x$ScientificName) | grepl(species[i],x$Genus) | grepl(species[i],x$Family)| grepl(species[i],x$Class)))
+    }
+    return(matches)
+}
+
+
+sp_match &lt;- parallel::mclapply(nus,match_tax,mc.cores=4)
+#save(sp_match, file = 'fb_species_match.rda')
+#load(file = 'fb_species_match.rda')
+
+sp_match &lt;- do.call('c',sp_match)
+
+# get habitat for FB species. For higher taxonomic groupings, 
+
+habitats &lt;- do.call('c',lapply(sp_match,function(x) {
+  if(length(x)&gt;0){
+    habitats&lt;- list()
+    for (i in 1:length(x))
+      habitats[[i]] &lt;- fish.data[[x[i]]]$habitat
+    
+    habitats &lt;- table(unlist(lapply(habitats,function(y) {
+      if(!is.null(y)) strsplit(y,'[;]')[[1]][1]
+      })))
+    habitat&lt;-names(which.max(habitats))
+    
+    } else {
+    habitat &lt;- NA
+    }
+  habitat
+  }
+)
+)
+
+unique(ppmr$Predator)[is.na(habitats)]
+
+## [1] &quot;Loligo pealeii&quot;          &quot;Notolepis rissoi&quot;       
+## [3] &quot;Paralichthys oblongus&quot;   &quot;Raja erinacea&quot;          
+## [5] &quot;Gilbertidia sigalutes&quot;   &quot;Raja ocellata&quot;          
+## [7] &quot;Leucoraja  fullonica   &quot; &quot;Raja naevus&quot;            
+## [9] &quot;Nototheniops larseni&quot;
+
+habitats[is.na(habitats)] &lt;- c('pelagic-neritic','bathypelagic','demersal','demersal','demersal','demersal','demersal','demersal','demersal','benthopelagic')
+
+ppmr$habitat &lt;- habitats[match(ppmr$Predator,unique(ppmr$Predator))]
+
+any(is.na(ppmr$habitat))
+
+## [1] FALSE
+
+##################################################
+############## Subset ############################
+##################################################
+
+ppmr.better &lt;- ppmr %&gt;% filter(Predator.quality.of.length.mass.conversion &lt;5,
+                            Prey.quality.of.conversion.to.mass &lt;5)
+
+ppmr.best &lt;- ppmr %&gt;% filter(Predator.quality.of.length.mass.conversion &lt;4,
+                            Prey.quality.of.conversion.to.mass &lt;4,
+                            !is.na(Individual.ID))</code></pre>
+<p id="section"></p>
+<h5 id="best-models">Best Models</h5>
+<p id="section-1"></p>
+<pre><code>best.model.int &lt;-  inla(log10(Prey.mass) ~ log10(Predator.mass)*Mean.annual.temp+
+                      SD.annual.temp +
+                      #f(log10(Pmass),model='rw2', diagonal=1e-5) + 
+                      f(Predator,model='iid') + 
+                      f(Geographic.location,model='iid')+
+                      f(Type.of.feeding.interaction,model='iid')+
+                      f(factor(Individual.ID),model='iid')+
+                      f(Order,model='iid')+
+                      f(Class,model='iid')+
+                      f(habitat,model='iid')+
+                      f(Family,model='iid')+
+                      #f(Specific.habitat,model='iid')+
+                      Depth +
+                      #Latitude + 
+                      Mean.PP,
+                    data = ppmr.best,
+                    control.compute = list(dic=TRUE,cpo=T),
+                    control.predictor = list(compute=T)
+)
+
+
+
+summary(best.model.int)
+
+## 
+## Call:
+## c(&quot;inla(formula = log10(Prey.mass) ~ log10(Predator.mass) * Mean.annual.temp + &quot;,  &quot;    SD.annual.temp + f(Predator, model = \&quot;iid\&quot;) + f(Geographic.location, &quot;,  &quot;    model = \&quot;iid\&quot;) + f(Type.of.feeding.interaction, model = \&quot;iid\&quot;) + &quot;,  &quot;    f(factor(Individual.ID), model = \&quot;iid\&quot;) + f(Order, model = \&quot;iid\&quot;) + &quot;,  &quot;    f(Class, model = \&quot;iid\&quot;) + f(habitat, model = \&quot;iid\&quot;) + f(Family, &quot;,  &quot;    model = \&quot;iid\&quot;) + Depth + Mean.PP, data = ppmr.best, control.compute = list(dic = TRUE, &quot;,  &quot;    cpo = T), control.predictor = list(compute = T))&quot;)
+## 
+## Time used:
+##  Pre-processing    Running inla Post-processing           Total 
+##          1.7319        187.6226          1.4964        190.8509 
+## 
+## Fixed effects:
+##                                          mean     sd 0.025quant 0.5quant
+## (Intercept)                           -2.2161 0.4319    -3.0810  -2.2107
+## log10(Predator.mass)                   0.8738 0.0457     0.7839   0.8738
+## Mean.annual.temp                       1.1605 0.8385    -0.5599   1.1797
+## SD.annual.temp                         0.1534 1.0431    -1.8260   0.1236
+## Depth                                 -1.2168 0.7080    -2.5252  -1.2509
+## Mean.PP                               -0.7346 0.3482    -1.4277  -0.7340
+## log10(Predator.mass):Mean.annual.temp  0.1788 0.0554     0.0700   0.1787
+##                                       0.975quant    mode kld
+## (Intercept)                              -1.3812 -2.1998   0
+## log10(Predator.mass)                      0.9633  0.8739   0
+## Mean.annual.temp                          2.7667  1.2101   0
+## SD.annual.temp                            2.2997  0.0643   0
+## Depth                                     0.3028 -1.3035   0
+## Mean.PP                                  -0.0488 -0.7337   0
+## log10(Predator.mass):Mean.annual.temp     0.2875  0.1787   0
+## 
+## Random effects:
+## Name   Model
+##  Predator   IID model 
+## Geographic.location   IID model 
+## Type.of.feeding.interaction   IID model 
+## factor(Individual.ID)   IID model 
+## Order   IID model 
+## Class   IID model 
+## habitat   IID model 
+## Family   IID model 
+## 
+## Model hyperparameters:
+##                                                mean        sd 0.025quant
+## Precision for the Gaussian observations       7.481 1.174e-01      7.259
+## Precision for Predator                        4.936 2.792e+00      1.096
+## Precision for Geographic.location            10.052 7.017e+00      1.649
+## Precision for Type.of.feeding.interaction   551.834 5.664e+02     53.335
+## Precision for factor(Individual.ID)           4.930 2.642e-01      4.443
+## Precision for Order                       14821.898 1.763e+04    931.633
+## Precision for Class                       17574.134 1.847e+04   1219.887
+## Precision for habitat                     20047.572 1.933e+04   1237.363
+## Precision for Family                          1.540 7.753e-01      0.620
+##                                            0.5quant 0.975quant     mode
+## Precision for the Gaussian observations       7.477      7.720    7.466
+## Precision for Predator                        4.449     11.590    3.060
+## Precision for Geographic.location             8.446     27.815    4.734
+## Precision for Type.of.feeding.interaction   385.571   2044.619  148.220
+## Precision for factor(Individual.ID)           4.918      5.480    4.890
+## Precision for Order                        9428.148  61373.577 2492.628
+## Precision for Class                       12050.185  66670.535 3337.375
+## Precision for habitat                     14356.244  70929.049 3279.316
+## Precision for Family                          1.350      3.547    1.062
+## 
+## Expected number of effective parameters(std dev): 1038.19(11.56)
+## Number of equivalent replicates : 9.337 
+## 
+## Deviance Information Criterion: 9044.72
+## Effective number of parameters: 1038.96
+## 
+## Marginal Likelihood:  -5308.91 
+## CPO and PIT are computed
+## 
+## Posterior marginals for linear predictor and fitted values computed
+
+plot(best.model.int)
+plot(best.model.int$summary.linear.predictor$`0.5quant`,log10(ppmr.best$Prey.mass))
+abline(a=0,b=1)
+
+-mean(log(best.model.int$cpo$cpo))
+
+## [1] 0.4970614
+
+hist(best.model.int$cpo$pit)
+hist(best.model.int$cpo$cpo)</code></pre>
+<p id="section-2"></p>
+<h5 id="better-models">Better Models</h5>
+<p id="section-3"></p>
+<pre><code># 
+# better.model.int &lt;-  inla(log10(Prey.mass) ~ log10(Predator.mass)*Mean.annual.temp+
+#                       SD.annual.temp +
+#                       #f(log10(Pmass),model='rw2', diagonal=1e-5) + 
+#                       f(Predator,model='iid') + 
+#                       f(Geographic.location,model='iid')+
+#                       f(Type.of.feeding.interaction,model='iid')+
+#                       f(factor(Individual.ID),model='iid')+
+#                       f(Order,model='iid')+
+#                       f(Class,model='iid')+
+#                       f(habitat,model='iid')+
+#                       f(Family,model='iid')+
+#                       #f(Specific.habitat,model='iid')+
+#                       Depth +
+#                       #Latitude + 
+#                       Mean.PP,
+#                     data = ppmr.better,
+#                     control.compute = list(dic=TRUE,cpo=T),
+#                     control.predictor = list(compute=T)
+# )
+# 
+# summary(better.model.int)
+# #plot(better.model.int)
+# plot(better.model.int$summary.linear.predictor$`0.5quant`,log10(ppmr.better$Prey.mass))
+# abline(a=0,b=1)
+# 
+# -mean(log(better.model.int$cpo$cpo))
+# hist(better.model.int$cpo$pit)</code></pre>
+<div id="references" class="references">
+<h1 id="references" class="unnumbered">References</h1>
+</div>
+
+            </div>
+        </main>
+        <footer>
+        </footer>
+        <script src="//code.jquery.com/jquery-2.1.3.min.js"></script>
+        <script>
+        $(document).ready(function() {
+        $('#js-navigation-menu').removeClass("show");
+        $('#js-mobile-menu').on('click', function(e) {
+        e.preventDefault();
+        $('#js-navigation-menu').slideToggle(function(){
+        if($('#js-navigation-menu').is(':hidden')) {
+        $('#js-navigation-menu').removeAttr('style');
+        }
+        });
+        });
+        });
+        </script>
+    </body>
+</html>

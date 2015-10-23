@@ -1,0 +1,501 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>FFWD fish blog</title>
+        <link rel="stylesheet" type="text/css" href="../css/style.css" />
+    </head>
+    <body>
+        <header class="navigation">
+            <div class="navigation-wrapper">
+                <a href="javascript:void(0)" class="logo">
+                    <img src="../images/logo_Sam.png" alt="Logo Image">
+                </a>
+                <a href="javascript:void(0)" class="navigation-menu-button" id="js-mobile-menu">MENU</a>
+                <div class="nav">
+                    <ul id="js-navigation-menu" class="navigation-menu show">
+                        <li class="nav-link"><a href="../index.html">Home</a></li>
+                        <li class="nav-link"><a href="../archive.html">Archive</a></li>
+                        <li class="nav-link"><a href="../about.html">About</a></li>
+                        <li class="nav-link"><a href="../people.html">People</a></li>
+                        <li class="nav-link"><a href="../contact.html">Contact</a></li>
+                    </ul>
+                </div>
+            </div>
+        </header>
+        <main>
+            
+            <div class="container">
+            <div class="info">
+    Posted on May 19, 2015
+    
+</div>
+
+<h1 id="changing-productivity-in-trait-based-models">Changing productivity in trait based models</h1>
+<p>Philipp Neubauer<br />
+25/05/2015</p>
+<pre><code>## Warning: package 'knitr' was built under R version 3.1.2</code></pre>
+<p>Change only carrying capacity:</p>
+<p>Now change growth rate of the background spectrum.</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co"># traits</span>
+nsp &lt;-<span class="st"> </span><span class="dv">12</span>
+
+params &lt;-<span class="st"> </span><span class="kw">set_trait_model</span>(<span class="dt">no_sp =</span> nsp, 
+                          <span class="dt">min_w_inf =</span> <span class="dv">10</span>, 
+                          <span class="dt">max_w_inf =</span> <span class="fl">5e5</span>,
+                          <span class="dt">n=</span><span class="dv">3</span>/<span class="dv">4</span>,
+                          <span class="dt">r_pp =</span> <span class="dv">2</span>,
+                          <span class="dt">w_pp_cutoff=</span><span class="dv">50</span>,
+                          <span class="dt">gear_names =</span> <span class="kw">as.character</span>(<span class="dv">1</span>:nsp),
+                          )
+
+params@species_params$erepro &lt;-<span class="st"> </span><span class="fl">0.1</span>
+
+paramsl &lt;-<span class="st"> </span><span class="kw">set_trait_model</span>(<span class="dt">no_sp =</span> nsp, 
+                          <span class="dt">min_w_inf =</span> <span class="dv">10</span>, 
+                          <span class="dt">max_w_inf =</span> <span class="fl">5e5</span>,
+                          <span class="dt">r_pp =</span> <span class="dv">1</span>,
+                          <span class="dt">n=</span><span class="dv">3</span>/<span class="dv">4</span>,
+                          <span class="dt">gear_names =</span> <span class="kw">as.character</span>(<span class="dv">1</span>:nsp),
+                          <span class="dt">w_pp_cutoff=</span><span class="dv">50</span>)
+
+paramsl@species_params$erepro &lt;-<span class="st"> </span><span class="fl">0.1</span>
+
+paramsh &lt;-<span class="st"> </span><span class="kw">set_trait_model</span>(<span class="dt">no_sp =</span> nsp, 
+                          <span class="dt">min_w_inf =</span> <span class="dv">10</span>, 
+                          <span class="dt">max_w_inf =</span> <span class="fl">5e5</span>,
+                          <span class="dt">r_pp =</span> <span class="dv">4</span>,
+                          <span class="dt">n=</span><span class="dv">3</span>/<span class="dv">4</span>,
+                          <span class="dt">gear_names =</span> <span class="kw">as.character</span>(<span class="dv">1</span>:nsp),
+                          <span class="dt">w_pp_cutoff=</span><span class="dv">50</span>)
+
+paramsh@species_params$erepro &lt;-<span class="st"> </span><span class="fl">0.1</span>
+
+paramsh2 &lt;-<span class="st"> </span><span class="kw">set_trait_model</span>(<span class="dt">no_sp =</span> nsp, 
+                          <span class="dt">min_w_inf =</span> <span class="dv">10</span>, 
+                          <span class="dt">max_w_inf =</span> <span class="fl">5e5</span>,
+                          <span class="dt">r_pp =</span> <span class="dv">8</span>,
+                          <span class="dt">n=</span><span class="dv">3</span>/<span class="dv">4</span>,
+                          <span class="dt">gear_names =</span> <span class="kw">as.character</span>(<span class="dv">1</span>:nsp),
+                          <span class="dt">w_pp_cutoff=</span><span class="dv">50</span>)
+
+paramsh2@species_params$erepro &lt;-<span class="st"> </span><span class="fl">0.1</span>
+
+sim &lt;-<span class="st"> </span><span class="kw">project</span>(params, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="dv">0</span>)
+siml &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="dv">0</span>)
+simh &lt;-<span class="st"> </span><span class="kw">project</span>(paramsh, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="dv">0</span>)
+simh2 &lt;-<span class="st"> </span><span class="kw">project</span>(paramsh2, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="dv">0</span>)
+
+hmm &lt;-<span class="st"> </span>paramsl@w&gt;<span class="dv">1</span>
+
+N &lt;-<span class="st"> </span><span class="kw">apply</span>(sim@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl &lt;-<span class="st"> </span><span class="kw">apply</span>(siml@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nh &lt;-<span class="st"> </span><span class="kw">apply</span>(simh@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nh2 &lt;-<span class="st"> </span><span class="kw">apply</span>(simh2@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+
+sims &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">Productivity=</span><span class="kw">rep</span>(<span class="kw">c</span>(<span class="st">'base case'</span>,<span class="st">'low'</span>,<span class="st">'high'</span>,<span class="st">'higher'</span>),<span class="dt">e=</span><span class="kw">sum</span>(hmm)),
+                   <span class="dt">N=</span><span class="kw">c</span>(N,Nl,Nh,Nh2),
+                   <span class="dt">w=</span><span class="kw">rep</span>(params@w[hmm],<span class="dv">4</span>))
+
+<span class="kw">require</span>(ggplot2)
+<span class="kw">ggplot</span>(sims) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_line</span>(<span class="kw">aes</span>(<span class="dt">x=</span>w,<span class="dt">y=</span>N*w^<span class="dv">2</span>,<span class="dt">col=</span>Productivity))+
+<span class="st">  </span><span class="kw">scale_x_log10</span>()+
+<span class="st">  </span><span class="kw">scale_y_log10</span>()+
+<span class="st">  </span><span class="kw">xlab</span>(<span class="st">'weight (g)'</span>)+
+<span class="st">  </span><span class="kw">theme_classic</span>()</code></pre></div>
+<div class="figure">
+<img src="2015-05-19-Changing-productivity-in-trait-based-models_files/figure-html/no%20fishing%20with%20changing%20background%20r-1.png" alt />
+
+</div>
+<p>It appears as though the higher productivity scenarios don't really change the picture much other than increasing abundance along the size spectrum. Lowering the productivity leads to a crash of large species in these simulations.</p>
+<p>Next, I inspect how the density dependence in recruitment changes as a function of carrying capacity.</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">dd &lt;-<span class="st"> </span>(sim@rdi/sim@rdd)[<span class="dv">76</span>,]
+ddl &lt;-<span class="st"> </span>(siml@rdi/siml@rdd)[<span class="dv">76</span>,]
+ddh &lt;-<span class="st"> </span>(simh@rdi/simh@rdd)[<span class="dv">76</span>,]
+ddh2 &lt;-<span class="st"> </span>(simh2@rdi/simh2@rdd)[<span class="dv">76</span>,]
+
+dd_sims &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">Capacity=</span><span class="kw">rep</span>(<span class="kw">c</span>(<span class="st">'base case'</span>,<span class="st">'low'</span>,<span class="st">'high'</span>,<span class="st">'higher'</span>),<span class="dt">e=</span><span class="kw">length</span>(dd)),
+                   <span class="dt">RelRec=</span><span class="kw">c</span>(dd,ddl,ddh,ddh2),
+                   <span class="dt">w=</span><span class="kw">rep</span>(params@species_params$w_inf,<span class="dv">4</span>))
+
+
+<span class="kw">require</span>(ggplot2)
+<span class="kw">ggplot</span>(dd_sims) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_line</span>(<span class="kw">aes</span>(<span class="dt">x=</span>w,<span class="dt">y=</span>RelRec,<span class="dt">col=</span>Capacity))+
+<span class="st">  </span><span class="kw">scale_x_log10</span>()+
+<span class="st">  </span><span class="kw">scale_y_log10</span>()+
+<span class="st">  </span><span class="kw">xlab</span>(<span class="st">'weight (g)'</span>)+
+<span class="st">  </span><span class="kw">theme_classic</span>()</code></pre></div>
+<div class="figure">
+<img src="2015-05-19-Changing-productivity-in-trait-based-models_files/figure-html/inspect%20dd-1.png" alt />
+
+</div>
+<p>Increasing carrying capacity leads to more density dependence in recruitment - not surprisingly perhaps as resources aren't limiting anymore at this stage. For the simulations with low carrying capacity, the relative importance of carrying capacity first increases more substantially than in the high PP scenarios, but then rashes for large size classes that collapsed in the simulations.</p>
+<p>The explanation for the collapse of large fish lies in the feeding level, which dips below the critical threshold feeding level for low carrying capacity, and thus leads to an eventual decline in larger fish beyond the affected size:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">spp &lt;-<span class="st"> </span>params@species_params
+
+fc &lt;-<span class="st"> </span>spp$ks/(spp$h*spp$alpha)
+
+<span class="co">#Feeding levels</span>
+fl_l &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl,siml@n[<span class="dv">76</span>,,],siml@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_s &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(params,sim@n[<span class="dv">76</span>,,],sim@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_h &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsh,simh@n[<span class="dv">76</span>,,],simh@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_h2 &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsh2,simh2@n[<span class="dv">76</span>,,],simh2@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+
+fls &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">Capacity=</span><span class="kw">rep</span>(<span class="kw">c</span>(<span class="st">'base case'</span>,<span class="st">'low'</span>,<span class="st">'high'</span>,<span class="st">'higher'</span>),<span class="dt">e=</span><span class="kw">sum</span>(hmm)),
+                   <span class="dt">FeedingLevel=</span><span class="kw">c</span>(fl_s,fl_l,fl_h,fl_h2),
+                   <span class="dt">w=</span><span class="kw">rep</span>(params@w[hmm],<span class="dv">4</span>))
+
+<span class="kw">require</span>(ggplot2)
+<span class="kw">ggplot</span>(fls) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_line</span>(<span class="kw">aes</span>(<span class="dt">x=</span>w,<span class="dt">y=</span>FeedingLevel,<span class="dt">col=</span>Capacity))+
+<span class="st">  </span><span class="kw">scale_x_log10</span>()+
+<span class="st">  </span><span class="kw">xlab</span>(<span class="st">'weight (g)'</span>)+
+<span class="st">  </span><span class="kw">theme_classic</span>()+
+<span class="st">  </span><span class="kw">geom_hline</span>(<span class="kw">aes</span>(<span class="dt">yintercept=</span>fc),<span class="dt">linetype=</span><span class="dv">3</span>,<span class="dt">size=</span><span class="fl">0.5</span>)</code></pre></div>
+<div class="figure">
+<img src="2015-05-19-Changing-productivity-in-trait-based-models_files/figure-html/feeding%20levels-1.png" alt />
+
+</div>
+<p>Since the feeding level at a particular size class depends on the food available for each size class:</p>
+<p><br /><span class="math display">$$f_{i}(w)=\frac{ \gamma w^{q} \phi_{i}(w)}{\gamma w^{q}\phi_{i}(w)+hw^{n}}$$</span><br /></p>
+<p>and we assume that the exponents and maximum feeding level are fixed, then the food preference seems the first target to explore the generality of the above results:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co"># decreasing beta to higher min beta</span>
+paramsl_bh &lt;-<span class="st"> </span><span class="kw">set_trait_model</span>(<span class="dt">no_sp =</span> nsp, 
+                          <span class="dt">min_w_inf =</span> <span class="dv">10</span>, 
+                          <span class="dt">max_w_inf =</span> <span class="fl">5e5</span>,
+                          <span class="dt">r_pp =</span> <span class="dv">1</span>,
+                          <span class="dt">n=</span><span class="dv">3</span>/<span class="dv">4</span>,
+                          <span class="dt">beta =</span> <span class="dv">1000</span>/<span class="st"> </span>(<span class="kw">seq</span>(<span class="dv">1</span>,<span class="dv">2</span>,<span class="dt">l=</span><span class="dv">12</span>)),
+                          <span class="dt">gear_names =</span> <span class="kw">as.character</span>(<span class="dv">1</span>:nsp),
+                          <span class="dt">w_pp_cutoff=</span><span class="dv">50</span>)
+
+<span class="co"># decreasing beta to higher min beta, with lower PP</span>
+paramsl_bh2 &lt;-<span class="st"> </span><span class="kw">set_trait_model</span>(<span class="dt">no_sp =</span> nsp, 
+                          <span class="dt">min_w_inf =</span> <span class="dv">10</span>, 
+                          <span class="dt">max_w_inf =</span> <span class="fl">5e5</span>,
+                          <span class="dt">r_pp =</span> <span class="fl">0.5</span>,
+                          <span class="dt">n=</span><span class="dv">3</span>/<span class="dv">4</span>,
+                          <span class="dt">beta =</span> <span class="dv">1000</span>/<span class="st"> </span>(<span class="kw">seq</span>(<span class="dv">1</span>,<span class="dv">2</span>,<span class="dt">l=</span><span class="dv">12</span>)),
+                          <span class="dt">gear_names =</span> <span class="kw">as.character</span>(<span class="dv">1</span>:nsp),
+                          <span class="dt">w_pp_cutoff=</span><span class="dv">50</span>)
+
+<span class="co"># decreasing beta to same min beta</span>
+paramsl_bl &lt;-<span class="st"> </span><span class="kw">set_trait_model</span>(<span class="dt">no_sp =</span> nsp, 
+                          <span class="dt">min_w_inf =</span> <span class="dv">10</span>, 
+                          <span class="dt">max_w_inf =</span> <span class="fl">5e5</span>,
+                          <span class="dt">r_pp =</span> <span class="dv">1</span>,
+                          <span class="dt">n=</span><span class="dv">3</span>/<span class="dv">4</span>,
+                          <span class="dt">beta =</span> <span class="dv">1000</span>/<span class="st"> </span>(<span class="kw">seq</span>(<span class="dv">1</span>,<span class="dv">10</span>,<span class="dt">l=</span><span class="dv">12</span>)),
+                          <span class="dt">gear_names =</span> <span class="kw">as.character</span>(<span class="dv">1</span>:nsp),
+                          <span class="dt">w_pp_cutoff=</span><span class="dv">50</span>)
+
+<span class="co"># increasing beta to higher min beta</span>
+paramsl_bi &lt;-<span class="st"> </span><span class="kw">set_trait_model</span>(<span class="dt">no_sp =</span> nsp, 
+                          <span class="dt">min_w_inf =</span> <span class="dv">10</span>, 
+                          <span class="dt">max_w_inf =</span> <span class="fl">5e5</span>,
+                          <span class="dt">r_pp =</span> <span class="dv">1</span>,
+                          <span class="dt">n=</span><span class="dv">3</span>/<span class="dv">4</span>,
+                          <span class="dt">beta =</span> <span class="kw">rev</span>(<span class="dv">1000</span>/<span class="st"> </span>(<span class="kw">seq</span>(<span class="dv">1</span>,<span class="dv">10</span>,<span class="dt">l=</span><span class="dv">12</span>))),
+                          <span class="dt">gear_names =</span> <span class="kw">as.character</span>(<span class="dv">1</span>:nsp),
+                          <span class="dt">w_pp_cutoff=</span><span class="dv">50</span>)
+
+<span class="co"># increase sigma</span>
+paramsl_bs &lt;-<span class="st"> </span><span class="kw">set_trait_model</span>(<span class="dt">no_sp =</span> nsp, 
+                          <span class="dt">min_w_inf =</span> <span class="dv">10</span>, 
+                          <span class="dt">max_w_inf =</span> <span class="fl">5e5</span>,
+                          <span class="dt">r_pp =</span> <span class="dv">1</span>,
+                          <span class="dt">n=</span><span class="dv">3</span>/<span class="dv">4</span>,
+                          <span class="dt">beta =</span> <span class="dv">100</span>,
+                          <span class="dt">sigma=</span><span class="dv">2</span>,
+                          <span class="dt">gear_names =</span> <span class="kw">as.character</span>(<span class="dv">1</span>:nsp),
+                          <span class="dt">w_pp_cutoff=</span><span class="dv">50</span>)
+
+<span class="co"># increase sigma, lower PP</span>
+paramsl_bs2 &lt;-<span class="st"> </span><span class="kw">set_trait_model</span>(<span class="dt">no_sp =</span> nsp, 
+                          <span class="dt">min_w_inf =</span> <span class="dv">10</span>, 
+                          <span class="dt">max_w_inf =</span> <span class="fl">5e5</span>,
+                          <span class="dt">r_pp =</span> <span class="fl">0.5</span>,
+                          <span class="dt">n=</span><span class="dv">3</span>/<span class="dv">4</span>,
+                          <span class="dt">beta =</span> <span class="dv">100</span>,
+                          <span class="dt">sigma=</span><span class="dv">2</span>,
+                          <span class="dt">gear_names =</span> <span class="kw">as.character</span>(<span class="dv">1</span>:nsp),
+                          <span class="dt">w_pp_cutoff=</span><span class="dv">50</span>)
+
+
+paramsl_bh@species_params$erepro &lt;-<span class="st"> </span><span class="fl">0.1</span>
+paramsl_bh2@species_params$erepro &lt;-<span class="st"> </span><span class="fl">0.1</span>
+paramsl_bi@species_params$erepro &lt;-<span class="st"> </span><span class="fl">0.1</span>
+paramsl_bl@species_params$erepro &lt;-<span class="st"> </span><span class="fl">0.1</span>
+paramsl_bs@species_params$erepro &lt;-<span class="st"> </span><span class="fl">0.1</span>
+paramsl_bs2@species_params$erepro &lt;-<span class="st"> </span><span class="fl">0.1</span>
+
+siml_bl &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bl, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="dv">0</span>)
+siml_bh &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bh, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="dv">0</span>)
+siml_bh2 &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bh2, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="dv">0</span>)
+siml_bi &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bi, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="dv">0</span>)
+siml_bs &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bs, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="dv">0</span>)
+siml_bs2 &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bs2, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="dv">0</span>)
+
+hmm &lt;-<span class="st"> </span>paramsl@w&gt;<span class="dv">1</span>
+
+Nl_bl &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bl@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bh &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bh@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bh2 &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bh2@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bi &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bi@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bs &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bs@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bs2 &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bs2@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+
+sims_beta &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">Scenario=</span><span class="kw">rep</span>(<span class="kw">c</span>(<span class="st">'basecase'</span>,<span class="st">'low beta &amp; PP basecase'</span>,<span class="st">'decreasing beta, low PP'</span>,<span class="st">'decreasing, high beta'</span>,<span class="st">'decreasing, high beta lower PP'</span>,<span class="st">'increasing, low beta low PP'</span>,<span class="st">'higher sigma, low PP'</span>,<span class="st">'higher sigma, lower PP'</span>),<span class="dt">e=</span><span class="kw">sum</span>(hmm)),
+                   <span class="dt">N=</span><span class="kw">c</span>(N,Nl,Nl_bl,Nl_bh,Nl_bh2,Nl_bi,Nl_bs,Nl_bs2),
+                   <span class="dt">w=</span><span class="kw">rep</span>(params@w[hmm],<span class="dv">8</span>))
+
+<span class="kw">require</span>(ggplot2)
+<span class="kw">ggplot</span>(sims_beta) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_line</span>(<span class="kw">aes</span>(<span class="dt">x=</span>w,<span class="dt">y=</span>N*w^<span class="dv">2</span>,<span class="dt">col=</span>Scenario,<span class="dt">linetype=</span>Scenario))+
+<span class="st">  </span><span class="kw">scale_x_log10</span>()+
+<span class="st">  </span><span class="kw">scale_y_log10</span>()+
+<span class="st">  </span><span class="kw">xlab</span>(<span class="st">'weight (g)'</span>)+
+<span class="st">  </span><span class="kw">theme_classic</span>()</code></pre></div>
+<div class="figure">
+<img src="2015-05-19-Changing-productivity-in-trait-based-models_files/figure-html/change%20beta%20structure-1.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co">#Feeding levels</span>
+fl_bs &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bs,siml_bs@n[<span class="dv">76</span>,,],siml_bs@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bs2 &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bs2,siml_bs2@n[<span class="dv">76</span>,,],siml_bs2@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bh &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bh,siml_bh@n[<span class="dv">76</span>,,],siml_bh@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bi &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bi,siml_bi@n[<span class="dv">76</span>,,],siml_bi@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bh2 &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bh2,siml_bh2@n[<span class="dv">76</span>,,],siml_bh2@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bl &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bl,siml_bl@n[<span class="dv">76</span>,,],siml_bl@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+
+fls &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">Scenario=</span><span class="kw">rep</span>(<span class="kw">c</span>(<span class="st">'basecase'</span>,<span class="st">'low beta &amp; PP basecase'</span>,<span class="st">'decreasing beta, low PP'</span>,<span class="st">'decreasing, high beta'</span>,<span class="st">'decreasing, high beta lower PP'</span>,<span class="st">'increasing, low beta low PP'</span>,<span class="st">'higher sigma, low PP'</span>,<span class="st">'higher sigma, lower PP'</span>),<span class="dt">e=</span><span class="kw">sum</span>(hmm)),
+                   <span class="dt">FeedingLevel=</span><span class="kw">c</span>(fl_s,fl_l,fl_bl,fl_bh,fl_bh2,fl_bi,fl_bs,fl_bs2),
+                   <span class="dt">w=</span><span class="kw">rep</span>(params@w[hmm],<span class="dv">8</span>))
+
+<span class="kw">require</span>(ggplot2)
+<span class="kw">ggplot</span>(fls) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_line</span>(<span class="kw">aes</span>(<span class="dt">x=</span>w,<span class="dt">y=</span>FeedingLevel,<span class="dt">col=</span>Scenario,<span class="dt">linetype=</span>Scenario))+
+<span class="st">  </span><span class="kw">scale_x_log10</span>()+
+<span class="st">  </span><span class="kw">xlab</span>(<span class="st">'weight (g)'</span>)+
+<span class="st">  </span><span class="kw">theme_classic</span>()+
+<span class="st">  </span><span class="kw">geom_hline</span>(<span class="kw">aes</span>(<span class="dt">yintercept=</span>fc),<span class="dt">linetype=</span><span class="dv">3</span>,<span class="dt">size=</span><span class="fl">0.5</span>)</code></pre></div>
+<p><img src="2015-05-19-Changing-productivity-in-trait-based-models_files/figure-html/change%20beta%20structure-2.png" alt /> The general conclusion seem to hold that with decreasing PP of the resource spectrum, fish at the larger end of the spectrum decline. The only way to almost entirely smooth over the variations in feeding level is to increase sigma such that most species will eat over a much larger span of the size spectrum.</p>
+<p>Some thoughts on large predators in oligotrophic waters:</p>
+<ul>
+<li>feed low on the food chain to avoid low food availability</li>
+<li>decrease metabolic/activity cost as sit &amp; wait predator (since <span class="math inline">$f_c \sim \frac{ks}{h \alpha}$</span>, lowering ks means lower critical level).</li>
+<li>increase gamma (pelagics) to increase feeding level</li>
+</ul>
+<p>Adding (unbalanced, selective) fishing - does fishing in this way do anything to the system?</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">knife_edges &lt;-<span class="st"> </span>params@species_params$w_mat +<span class="st"> </span>params@species_params$w_mat *<span class="st"> </span><span class="fl">0.05</span>
+
+paramsl@species_params$knife_edge_size &lt;-<span class="st"> </span>knife_edges
+params@species_params$knife_edge_size &lt;-<span class="st"> </span>knife_edges
+paramsl_bl@species_params$knife_edge_size &lt;-<span class="st"> </span>knife_edges
+paramsl_bh@species_params$knife_edge_size &lt;-<span class="st"> </span>knife_edges
+paramsl_bh2@species_params$knife_edge_size &lt;-<span class="st"> </span>knife_edges
+paramsl_bi@species_params$knife_edge_size &lt;-<span class="st"> </span>knife_edges
+paramsl_bs@species_params$knife_edge_size &lt;-<span class="st"> </span>knife_edges
+paramsl_bs2@species_params$knife_edge_size &lt;-<span class="st"> </span>knife_edges
+
+sim_f  &lt;-<span class="st"> </span><span class="kw">project</span>(params, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="fl">0.5</span>)
+siml_f  &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="fl">0.5</span>)
+siml_bl_f  &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bl, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="fl">0.5</span>)
+siml_bh_f  &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bh, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="fl">0.5</span>)
+siml_bh2_f &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bh2, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="fl">0.5</span>)
+siml_bi_f  &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bi, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="fl">0.5</span>)
+siml_bs_f  &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bs, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="fl">0.5</span>)
+siml_bs2_f &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bs2, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> <span class="fl">0.5</span>)
+
+N_f &lt;-<span class="st"> </span><span class="kw">apply</span>(sim_f@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_f &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_f@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bl_f &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bl_f@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bh_f &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bh_f@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bh2_f &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bh2_f@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bi_f &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bi_f@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bs_f &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bs_f@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bs2_f &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bs2_f@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+
+sims_f &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">Scenario=</span><span class="kw">rep</span>(<span class="kw">rep</span>(<span class="kw">c</span>(<span class="st">'basecase'</span>,<span class="st">'low beta &amp; PP basecase'</span>,<span class="st">'decreasing beta, low PP'</span>,<span class="st">'decreasing, high beta'</span>,<span class="st">'decreasing, high beta lower PP'</span>,<span class="st">'increasing, low beta low PP'</span>,<span class="st">'higher sigma, low PP'</span>,<span class="st">'higher sigma, lower PP'</span>),<span class="dt">e=</span><span class="kw">sum</span>(hmm)),<span class="dv">2</span>),
+                   <span class="dt">N=</span><span class="kw">c</span>(N_f,Nl_f,Nl_bl_f,Nl_bh_f,Nl_bh2_f,Nl_bi_f,Nl_bs_f,Nl_bs2_f,sims_beta$N),
+                   <span class="dt">w=</span><span class="kw">rep</span>(params@w[hmm],<span class="dv">8</span>),
+                   <span class="dt">fished =</span> <span class="kw">c</span>(<span class="kw">rep</span>(T,<span class="kw">nrow</span>(sims_beta)),<span class="kw">rep</span>(F,<span class="kw">nrow</span>(sims_beta))))
+
+
+<span class="kw">require</span>(ggplot2)
+<span class="kw">ggplot</span>(sims_f) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_line</span>(<span class="kw">aes</span>(<span class="dt">x=</span>w,<span class="dt">y=</span>N*w^<span class="dv">2</span>,<span class="dt">col=</span>Scenario,<span class="dt">linetype=</span>fished,<span class="dt">symbol=</span>fished))+
+<span class="st">  </span><span class="kw">scale_x_log10</span>()+
+<span class="st">  </span><span class="kw">scale_y_log10</span>()+
+<span class="st">  </span><span class="kw">xlab</span>(<span class="st">'weight (g)'</span>)+
+<span class="st">  </span><span class="kw">theme_classic</span>()</code></pre></div>
+<div class="figure">
+<img src="2015-05-19-Changing-productivity-in-trait-based-models_files/figure-html/unbalanced%20selective%20fishing%20with%20changing%20productivity-1.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">sims_f_rel &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">Scenario=</span><span class="kw">rep</span>(<span class="kw">c</span>(<span class="st">'basecase'</span>,<span class="st">'low beta &amp; PP basecase'</span>,<span class="st">'decreasing beta, low PP'</span>,<span class="st">'decreasing, high beta'</span>,<span class="st">'decreasing, high beta lower PP'</span>,<span class="st">'increasing, low beta low PP'</span>,<span class="st">'higher sigma, low PP'</span>,<span class="st">'higher sigma, lower PP'</span>),<span class="dt">e=</span><span class="kw">sum</span>(hmm)),
+                   <span class="dt">relN=</span><span class="kw">c</span>(N/N_f,Nl_f/Nl,Nl_bl_f/Nl_bl,Nl_bh_f/Nl_bh,Nl_bh2_f/Nl_bh2,Nl_bi_f/Nl_bi,Nl_bs_f/Nl_bs,Nl_bs2_f/Nl_bs),
+                   <span class="dt">w=</span><span class="kw">rep</span>(params@w[hmm],<span class="dv">8</span>))
+
+<span class="kw">require</span>(ggplot2)
+<span class="kw">ggplot</span>(sims_f_rel) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_line</span>(<span class="kw">aes</span>(<span class="dt">x=</span>w,<span class="dt">y=</span>relN,<span class="dt">col=</span>Scenario,<span class="dt">linetype=</span>Scenario))+
+<span class="st">  </span><span class="kw">geom_hline</span>(<span class="kw">aes</span>(<span class="dt">yintercept=</span><span class="dv">1</span>))+
+<span class="st">  </span><span class="kw">scale_x_log10</span>()+
+<span class="st">  </span><span class="kw">scale_y_log10</span>()+
+<span class="st">  </span><span class="kw">xlab</span>(<span class="st">'weight (g)'</span>)+
+<span class="st">  </span><span class="kw">theme_classic</span>()</code></pre></div>
+<div class="figure">
+<img src="2015-05-19-Changing-productivity-in-trait-based-models_files/figure-html/unbalanced%20selective%20fishing%20with%20changing%20productivity-2.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co">#Feeding levels</span>
+fs_f &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(params,sim_f@n[<span class="dv">76</span>,,],sim_f@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_f &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl,siml_f@n[<span class="dv">76</span>,,],siml_f@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bs_f &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bs,siml_bs_f@n[<span class="dv">76</span>,,],siml_bs_f@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bs2_f &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bs2,siml_bs2@n[<span class="dv">76</span>,,],siml_bs2_f@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bh_f &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bh,siml_bh_f@n[<span class="dv">76</span>,,],siml_bh_f@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bi_f &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bi,siml_bi_f@n[<span class="dv">76</span>,,],siml_bi_f@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bh2_f &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bh2,siml_bh2_f@n[<span class="dv">76</span>,,],siml_bh2_f@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bl_f &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bl,siml_bl_f@n[<span class="dv">76</span>,,],siml_bl_f@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+
+fls_f &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">Scenario=</span><span class="kw">rep</span>(<span class="kw">c</span>(<span class="st">'basecase'</span>,<span class="st">'low beta &amp; PP basecase'</span>,<span class="st">'decreasing beta, low PP'</span>,<span class="st">'decreasing, high beta'</span>,<span class="st">'decreasing, high beta lower PP'</span>,<span class="st">'increasing, low beta low PP'</span>,<span class="st">'higher sigma, low PP'</span>,<span class="st">'higher sigma, lower PP'</span>),<span class="dt">e=</span><span class="kw">sum</span>(hmm)),
+                   <span class="dt">FeedingLevel=</span><span class="kw">c</span>(fs_f,fl_f,fl_bl_f,fl_bh_f,fl_bh2_f,fl_bi_f,fl_bs_f,fl_bs2_f),
+                   <span class="dt">w=</span><span class="kw">rep</span>(params@w[hmm],<span class="dv">8</span>))
+
+<span class="kw">require</span>(ggplot2)
+<span class="kw">ggplot</span>(fls_f) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_line</span>(<span class="kw">aes</span>(<span class="dt">x=</span>w,<span class="dt">y=</span>FeedingLevel,<span class="dt">col=</span>Scenario))+
+<span class="st">  </span><span class="kw">scale_x_log10</span>()+
+<span class="st">  </span><span class="kw">xlab</span>(<span class="st">'weight (g)'</span>)+
+<span class="st">  </span><span class="kw">theme_classic</span>()+
+<span class="st">  </span><span class="kw">geom_hline</span>(<span class="kw">aes</span>(<span class="dt">yintercept=</span>fc),<span class="dt">linetype=</span><span class="dv">3</span>,<span class="dt">size=</span><span class="fl">0.5</span>)</code></pre></div>
+<div class="figure">
+<img src="2015-05-19-Changing-productivity-in-trait-based-models_files/figure-html/unbalanced%20selective%20fishing%20with%20changing%20productivity-3.png" alt />
+
+</div>
+<p>It seems as though fishing smoothed out some of the trophic interactions that drove declines in large fish, such that the feeding limitation disappears. However, the declines in large fish are still more pronounced relative to the unfished scenario, but are far more abrupt.</p>
+<p>It also seems that the slope of the spectrum declines consistently with declining PP - and with fishing. For instance, taking the basecase, lowering the PP leads to a <code>30.37</code>% decrease in slope, adding fishing further reduces the slope by <code>-1.5</code>%. Similar declines in slopes can be observed for the other simulations.</p>
+<p>What if fishing is balanced and selective instead? Using Nis' 0.25, applied to <span class="math inline"><em>w</em><sub><em>m</em></sub><em>a</em><em>t</em></span> since that's where I apply fishing and there's lots more fish at that size class than <span class="math inline"><em>w</em><sub><em>i</em></sub><em>n</em><em>f</em></span>:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">effort &lt;-<span class="st"> </span>(params@species_params$w_mat/<span class="st"> </span><span class="kw">median</span>(params@species_params$w_mat))^-<span class="fl">0.25</span>*<span class="fl">0.5</span>
+<span class="kw">names</span>(effort) &lt;-<span class="st"> </span><span class="kw">as.character</span>(<span class="dv">1</span>:nsp)
+
+sim_fb  &lt;-<span class="st"> </span><span class="kw">project</span>(params, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> effort)
+siml_fb  &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> effort)
+siml_bl_fb  &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bl, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> effort)
+siml_bh_fb  &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bh, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> effort)
+siml_bh2_fb &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bh2, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> effort)
+siml_bi_fb  &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bi, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> effort)
+siml_bs_fb  &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bs, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> effort)
+siml_bs2_fb &lt;-<span class="st"> </span><span class="kw">project</span>(paramsl_bs2, <span class="dt">t_max=</span><span class="dv">75</span>, <span class="dt">effort =</span> effort)
+
+N_fb &lt;-<span class="st"> </span><span class="kw">apply</span>(sim_fb@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_fb &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_fb@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bl_fb &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bl_fb@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bh_fb &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bh_fb@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bh2_fb &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bh2_fb@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bi_fb &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bi_fb@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bs_fb &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bs_fb@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+Nl_bs2_fb &lt;-<span class="st"> </span><span class="kw">apply</span>(siml_bs2_fb@n,<span class="dv">3</span>,rowSums)[<span class="dv">76</span>,hmm]
+
+sims_fb &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">Scenario=</span><span class="kw">rep</span>(<span class="kw">rep</span>(<span class="kw">c</span>(<span class="st">'basecase'</span>,<span class="st">'low beta &amp; PP basecase'</span>,<span class="st">'decreasing beta, low PP'</span>,<span class="st">'decreasing, high beta'</span>,<span class="st">'decreasing, high beta lower PP'</span>,<span class="st">'increasing, low beta low PP'</span>,<span class="st">'higher sigma, low PP'</span>,<span class="st">'higher sigma, lower PP'</span>),<span class="dt">e=</span><span class="kw">sum</span>(hmm)),<span class="dv">2</span>),
+                   <span class="dt">N=</span><span class="kw">c</span>(N_fb,Nl_fb,Nl_bl_fb,Nl_bh_fb,Nl_bh2_fb,Nl_bi_fb,Nl_bs_fb,Nl_bs2_fb,sims_beta$N),
+                   <span class="dt">w=</span><span class="kw">rep</span>(params@w[hmm],<span class="dv">8</span>),
+                   <span class="dt">fished =</span> <span class="kw">c</span>(<span class="kw">rep</span>(T,<span class="kw">nrow</span>(sims_beta)),<span class="kw">rep</span>(F,<span class="kw">nrow</span>(sims_beta))))
+
+
+<span class="kw">require</span>(ggplot2)
+<span class="kw">ggplot</span>(sims_fb) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_line</span>(<span class="kw">aes</span>(<span class="dt">x=</span>w,<span class="dt">y=</span>N*w^<span class="dv">2</span>,<span class="dt">col=</span>Scenario,<span class="dt">linetype=</span>fished,<span class="dt">symbol=</span>fished))+
+<span class="st">  </span><span class="kw">scale_x_log10</span>()+
+<span class="st">  </span><span class="kw">scale_y_log10</span>()+
+<span class="st">  </span><span class="kw">xlab</span>(<span class="st">'weight (g)'</span>)+
+<span class="st">  </span><span class="kw">theme_classic</span>()</code></pre></div>
+<div class="figure">
+<img src="2015-05-19-Changing-productivity-in-trait-based-models_files/figure-html/balanced%20selective%20fishing%20with%20changing%20productivity-1.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">sims_fb_rel &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">Scenario=</span><span class="kw">rep</span>(<span class="kw">c</span>(<span class="st">'basecase'</span>,<span class="st">'low beta &amp; PP basecase'</span>,<span class="st">'decreasing beta, low PP'</span>,<span class="st">'decreasing, high beta'</span>,<span class="st">'decreasing, high beta lower PP'</span>,<span class="st">'increasing, low beta low PP'</span>,<span class="st">'higher sigma, low PP'</span>,<span class="st">'higher sigma, lower PP'</span>),<span class="dt">e=</span><span class="kw">sum</span>(hmm)),
+                   <span class="dt">relN=</span><span class="kw">c</span>(N_fb/N,Nl_fb/Nl,Nl_bl_fb/Nl_bl,Nl_bh_fb/Nl_bh,Nl_bh2_fb/Nl_bh2,Nl_bi_fb/Nl_bi,Nl_bs_fb/Nl_bs,Nl_bs2_fb/Nl_bs),
+                   <span class="dt">w=</span><span class="kw">rep</span>(params@w[hmm],<span class="dv">8</span>))
+
+<span class="kw">require</span>(ggplot2)
+<span class="kw">ggplot</span>(sims_fb_rel) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_line</span>(<span class="kw">aes</span>(<span class="dt">x=</span>w,<span class="dt">y=</span>relN,<span class="dt">col=</span>Scenario,<span class="dt">linetype=</span>Scenario))+
+<span class="st">  </span><span class="kw">geom_hline</span>(<span class="kw">aes</span>(<span class="dt">yintercept=</span><span class="dv">1</span>))+
+<span class="st">  </span><span class="kw">scale_x_log10</span>()+
+<span class="st">  </span><span class="kw">scale_y_log10</span>()+
+<span class="st">  </span><span class="kw">xlab</span>(<span class="st">'weight (g)'</span>)+
+<span class="st">  </span><span class="kw">theme_classic</span>()</code></pre></div>
+<div class="figure">
+<img src="2015-05-19-Changing-productivity-in-trait-based-models_files/figure-html/balanced%20selective%20fishing%20with%20changing%20productivity-2.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">sims_fb_rel2 &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">Scenario=</span><span class="kw">rep</span>(<span class="kw">c</span>(<span class="st">'basecase'</span>,<span class="st">'low beta &amp; PP basecase'</span>,<span class="st">'decreasing beta, low PP'</span>,<span class="st">'decreasing, high beta'</span>,<span class="st">'decreasing, high beta lower PP'</span>,<span class="st">'increasing, low beta low PP'</span>,<span class="st">'higher sigma, low PP'</span>,<span class="st">'higher sigma, lower PP'</span>),<span class="dt">e=</span><span class="kw">sum</span>(hmm)),
+                   <span class="dt">relN=</span><span class="kw">c</span>(N_fb/N_f,Nl_fb/Nl_f,Nl_bl_fb/Nl_bl_f,Nl_bh_fb/Nl_bh_f,Nl_bh2_fb/Nl_bh2_f,Nl_bi_fb/Nl_bi_f,Nl_bs_fb/Nl_bs_f,Nl_bs2_fb/Nl_bs_f),
+                   <span class="dt">w=</span><span class="kw">rep</span>(params@w[hmm],<span class="dv">8</span>))
+
+<span class="kw">require</span>(ggplot2)
+<span class="kw">ggplot</span>(sims_fb_rel2) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_line</span>(<span class="kw">aes</span>(<span class="dt">x=</span>w,<span class="dt">y=</span>relN,<span class="dt">col=</span>Scenario,<span class="dt">linetype=</span>Scenario))+
+<span class="st">  </span><span class="kw">geom_hline</span>(<span class="kw">aes</span>(<span class="dt">yintercept=</span><span class="dv">1</span>))+
+<span class="st">  </span><span class="kw">scale_x_log10</span>()+
+<span class="st">  </span><span class="kw">scale_y_log10</span>()+
+<span class="st">  </span><span class="kw">xlab</span>(<span class="st">'weight (g)'</span>)+
+<span class="st">  </span><span class="kw">theme_classic</span>()</code></pre></div>
+<div class="figure">
+<img src="2015-05-19-Changing-productivity-in-trait-based-models_files/figure-html/balanced%20selective%20fishing%20with%20changing%20productivity-3.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co">#Feeding levels</span>
+fs_fb &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl,sim_fb@n[<span class="dv">76</span>,,],sim_fb@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_fb &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl,siml_fb@n[<span class="dv">76</span>,,],siml_fb@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bs_fb &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bs,siml_bs_fb@n[<span class="dv">76</span>,,],siml_bs_fb@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bs2_fb &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bs2,siml_bs2@n[<span class="dv">76</span>,,],siml_bs2_fb@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bh_fb &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bh,siml_bh_fb@n[<span class="dv">76</span>,,],siml_bh_fb@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bi_fb &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bi,siml_bi_fb@n[<span class="dv">76</span>,,],siml_bi_fb@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bh2_fb &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bh2,siml_bh2_fb@n[<span class="dv">76</span>,,],siml_bh2_fb@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+fl_bl_fb &lt;-<span class="st"> </span><span class="kw">getFeedingLevel</span>(paramsl_bl,siml_bl_fb@n[<span class="dv">76</span>,,],siml_bl_fb@n_pp[<span class="dv">76</span>,])[<span class="dv">12</span>,hmm]
+
+fls_fb &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">Scenario=</span><span class="kw">rep</span>(<span class="kw">c</span>(<span class="st">'basecase'</span>,<span class="st">'low beta &amp; PP basecase'</span>,<span class="st">'decreasing beta, low PP'</span>,<span class="st">'decreasing, high beta'</span>,<span class="st">'decreasing, high beta lower PP'</span>,<span class="st">'increasing, low beta low PP'</span>,<span class="st">'higher sigma, low PP'</span>,<span class="st">'higher sigma, lower PP'</span>),<span class="dt">e=</span><span class="kw">sum</span>(hmm)),
+                   <span class="dt">FeedingLevel=</span><span class="kw">c</span>(fs_fb,fl_fb,fl_bl_fb,fl_bh_fb,fl_bh2_fb,fl_bi_fb,fl_bs_fb,fl_bs2_fb),
+                   <span class="dt">w=</span><span class="kw">rep</span>(params@w[hmm],<span class="dv">8</span>))
+
+<span class="kw">require</span>(ggplot2)
+<span class="kw">ggplot</span>(fls_fb) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_line</span>(<span class="kw">aes</span>(<span class="dt">x=</span>w,<span class="dt">y=</span>FeedingLevel,<span class="dt">col=</span>Scenario))+
+<span class="st">  </span><span class="kw">scale_x_log10</span>()+
+<span class="st">  </span><span class="kw">xlab</span>(<span class="st">'weight (g)'</span>)+
+<span class="st">  </span><span class="kw">theme_classic</span>()+
+<span class="st">  </span><span class="kw">geom_hline</span>(<span class="kw">aes</span>(<span class="dt">yintercept=</span>fc),<span class="dt">linetype=</span><span class="dv">3</span>,<span class="dt">size=</span><span class="fl">0.5</span>)</code></pre></div>
+<div class="figure">
+<img src="2015-05-19-Changing-productivity-in-trait-based-models_files/figure-html/balanced%20selective%20fishing%20with%20changing%20productivity-4.png" alt />
+
+</div>
+<div id="references" class="references">
+
+</div>
+
+            </div>
+        </main>
+        <footer>
+        </footer>
+        <script src="//code.jquery.com/jquery-2.1.3.min.js"></script>
+        <script>
+        $(document).ready(function() {
+        $('#js-navigation-menu').removeClass("show");
+        $('#js-mobile-menu').on('click', function(e) {
+        e.preventDefault();
+        $('#js-navigation-menu').slideToggle(function(){
+        if($('#js-navigation-menu').is(':hidden')) {
+        $('#js-navigation-menu').removeAttr('style');
+        }
+        });
+        });
+        });
+        </script>
+    </body>
+</html>
