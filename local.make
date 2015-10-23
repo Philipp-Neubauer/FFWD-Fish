@@ -4,13 +4,13 @@ SITEBUILDER := $(shell cd deps/sitehakyll && stack path --local-install-root)/bi
 .PHONY: watch site
 
 site: $(SITEBUILDER) $(RMARKEDDOWN)
-	cd site && $^ build
+	cd site && $(SITEBUILDER) build
 
 watch: $(SITEBUILDER) $(RMARKEDDOWN)
-	cd site && $^ watch
+	cd site && $(SITEBUILDER) watch
 
 clean: $(SITEBUILDER)
-	cd site && $^ clean
+	cd site && $(SITEBUILDER) clean
 
 $(SITEBUILDER): deps/sitehakyll/site.hs \
 															deps/sitehakyll/ffwd-fish-site.cabal \
