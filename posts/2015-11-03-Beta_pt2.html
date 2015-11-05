@@ -1,0 +1,518 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>FFWD fish blog</title>
+        <link rel="stylesheet" type="text/css" href="../css/style.css" />
+    </head>
+    <body>
+        <header class="navigation">
+            <div class="navigation-wrapper">
+                <a href="javascript:void(0)" class="logo">
+                    <img src="../images/logo_Sam.png" alt="Logo Image" align="middle">
+                </a>
+                <a href="javascript:void(0)" class="navigation-menu-button" id="js-mobile-menu">MENU</a>
+                <div class="nav">
+                    <ul id="js-navigation-menu" class="navigation-menu show">
+                        <li class="nav-link"><a href="../index.html">Home</a></li>
+                        <li class="nav-link"><a href="../archive.html">Archive</a></li>
+                        <li class="nav-link"><a href="../about.html">About</a></li>
+                        <li class="nav-link"><a href="../contact.html">Contact</a></li>
+                        <li class="nav-link"><a href="https://github.com/Philipp-Neubauer/FFWD-Fish"> <img src="../images/Octocat_small.png" width="66.66" height="55.41" align="top"></a></li>
+                    </ul>
+                </div>
+                 
+            </div>
+        </header>
+        <main>
+            
+            <div class="container">
+            <div class="info">
+    <br>
+    
+    Posted on November  3, 2015
+    
+        by Philipp Neubauer
+    
+</div>
+
+<p><br></p>
+<h1 id="sources-of-variation-in-ppmrs-pt2---jags-analysis">Sources of variation in PPMRs: PT2 - JAGS analysis</h1>
+<p><br> <br></p>
+<h2 id="background">Background</h2>
+<p><br> In a <a href="2015-10-20-Beta_pt1.html">previous post</a> I attempted a first comprehensive analysis of predator-prey diet data based on the dataset of <span class="citation">Barnes et al. (2010)</span>. The comprehensive model included taxonomic, habitat and predation (predator size, feed type) effects as well as environmental covariates. While it upheld previous findings, it also seemed limited at inferring taxonomic variability at higher taxonomic levels.</p>
+<p>In this post, I extend the analysis to a more complicated Bayesian model that employs a nested random effect structure that better represents the taxonomic hierarchy. The model is quite complex in that it models the taxonomic hierarchy as a series of draws from distributions at each taxonomic level.For instance, species means are drawn from a family level distribution with a family specific mean and variance, i.e.,<span class="math inline"><em>μ</em><sub><em>s</em><em>p</em><sub><em>i</em>, <em>f</em></sub></sub> ∼ <em>N</em>(<em>μ</em><sub><em>f</em><em>a</em><em>m</em><sub><em>f</em></sub></sub>, <em>σ</em><sub><em>f</em><em>a</em><em>m</em><sub><em>f</em></sub></sub>)</span>. The full model is <a href="2015-11-03-Beta_pt2_files/taxmodel_HC_pref.R">here</a>.</p>
+<h2 id="preparing-the-data">Preparing the data</h2>
+<p>The first step is to load the data, downloaded from the <a href="http://esapubs.org/archive/ecol/E089/051/metadata.htm">ecology archives</a>.</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">require</span>(dplyr)
+
+ppmr.tab &lt;-<span class="kw">read.csv</span>(<span class="st">'include/PPMR_files/PPMR.csv'</span>,<span class="dt">header=</span>T,<span class="dt">na.strings =</span> <span class="st">'n/a'</span>,<span class="dt">stringsAsFactors =</span> F)
+ppmr &lt;-<span class="st"> </span><span class="kw">tbl_df</span>(ppmr.tab)
+
+<span class="co"># convert all weights to mg</span>
+ppmr$Prey.mass[ppmr$Prey.mass.unit==<span class="st">'mg'</span>] &lt;-<span class="st"> </span>ppmr$Prey.mass[ppmr$Prey.mass.unit==<span class="st">'mg'</span>] /<span class="dv">1000</span>
+
+<span class="co"># numeric Latitude</span>
+ppmr$Latitude &lt;-<span class="st"> </span><span class="kw">as.numeric</span>(<span class="kw">substr</span>(ppmr$Latitude,<span class="dt">start =</span> <span class="dv">1</span>,<span class="dt">stop =</span> <span class="dv">2</span>))
+<span class="co"># filter insectivorous fish</span>
+ppmr &lt;-<span class="st"> </span>ppmr %&gt;%<span class="st"> </span><span class="kw">filter</span>(!Type.of.feeding.interaction %in%<span class="st"> </span><span class="kw">c</span>(<span class="st">'insectivorous'</span>,<span class="st">'predacious/piscivorous'</span>))</code></pre></div>
+<p>I then use taxize and rfishbase to get the covariates:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">################################
+###### Taxise ##################
+################################
+
+<span class="kw">require</span>(<span class="st">&quot;taxize&quot;</span>)
+
+
+<span class="co"># taxonomy of unresolved names, fix some bad entries manually</span>
+us &lt;-<span class="st"> </span><span class="kw">unique</span>(ppmr$Predator)
+us[us==<span class="st">'Urophysis chuss'</span>] &lt;-<span class="st"> 'Urophycis chuss'</span>
+us[us==<span class="st">'Leucoraja  fullonica   '</span>] &lt;-<span class="st"> 'Leucoraja  fullonica'</span>
+us[us==<span class="st">'Myoxocephalus octodecimspinosus'</span>] &lt;-<span class="st"> 'Myoxocephalus octodecemspinosus'</span>
+
+<span class="co"># get rid of leading or trailing white spaces in species names</span>
+trim &lt;-<span class="st"> </span>function (x) <span class="kw">gsub</span>(<span class="st">&quot;^</span><span class="ch">\\</span><span class="st">s+|</span><span class="ch">\\</span><span class="st">s+$&quot;</span>, <span class="st">&quot;&quot;</span>, x)
+us &lt;-<span class="kw">trim</span>(us)
+nus&lt;-<span class="st"> </span><span class="kw">strsplit</span>(us,<span class="dt">split =</span> <span class="st">' sp.'</span>,<span class="dt">fixed=</span>T)
+
+<span class="co"># get taxonomy</span>
+cs  &lt;-<span class="st"> </span><span class="kw">classification</span>(nus, <span class="dt">db =</span> <span class="st">'ncbi'</span>)
+
+<span class="co"># assign taxonomy</span>
+ppmr$Class &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(cs,function(x) x$name[x$rank==<span class="st">'Class'</span> |x$rank==<span class="st">'class'</span> ]))[<span class="kw">match</span>(ppmr$Predator,<span class="kw">unique</span>(ppmr$Predator))]
+
+ppmr$Order &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(cs,function(x) x$name[x$rank==<span class="st">'Order'</span> |<span class="st"> </span>x$rank==<span class="st">'order'</span>]))[<span class="kw">match</span>(ppmr$Predator,<span class="kw">unique</span>(ppmr$Predator))]
+
+ppmr$Family &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(cs,function(x) x$name[x$rank==<span class="st">'Family'</span> |<span class="st"> </span>x$rank==<span class="st">'family'</span>]))[<span class="kw">match</span>(ppmr$Predator,<span class="kw">unique</span>(ppmr$Predator))]</code></pre></div>
+<p>To get the habitats, I use a majority vote among habitats of species within higher taxonomic levels for predators that are not resolved to species level.</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">##################################################
+################ Habitats ######################## 
+##################################################
+
+<span class="co"># get habitat from fishbase and other DBs</span>
+<span class="kw">require</span>(rfishbase)
+
+<span class="co"># %in% doesn't work, need grepl as some ScientificNames don't match - makes it really slow</span>
+match_tax &lt;-<span class="st"> </span>function (sp, <span class="dt">fish.data =</span> <span class="ot">NULL</span>, <span class="dt">path =</span> <span class="ot">NULL</span>) {
+   
+    if (<span class="kw">is.null</span>(fish.data)) 
+        fish.data &lt;-<span class="st"> </span>fishbase
+        
+    matches &lt;-<span class="st"> </span><span class="kw">vector</span>(<span class="st">'list'</span>,<span class="kw">length</span>(sp))
+    for (i in <span class="dv">1</span>:<span class="kw">length</span>(sp)){
+    matches[[i]] &lt;-<span class="st"> </span><span class="kw">which</span>(<span class="kw">do.call</span>(<span class="st">'c'</span>,<span class="kw">lapply</span>(<span class="kw">split</span>(fish.data,<span class="dv">1</span>:<span class="kw">nrow</span>(fish.data)), function(x) <span class="kw">grepl</span>(sp[[i]],<span class="kw">paste</span>(x$Genus,x$Species,<span class="dt">collapse=</span><span class="st">' '</span>)) |<span class="st"> </span><span class="kw">grepl</span>(sp[[i]],x$Genus) |<span class="st"> </span><span class="kw">grepl</span>(sp[[i]],x$Family)|<span class="st"> </span><span class="kw">grepl</span>(sp[[i]],x$Class))))
+    }
+    <span class="kw">return</span>(matches)
+}
+
+<span class="co"># parallelise this call</span>
+sp_match &lt;-<span class="st"> </span>parallel::<span class="kw">mclapply</span>(nus,match_tax,<span class="dt">mc.cores=</span><span class="dv">4</span>)
+sp_match &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'c'</span>,sp_match)
+
+<span class="co"># get habitat for FB species. </span>
+
+habitats &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'c'</span>,<span class="kw">lapply</span>(sp_match,function(x) {
+  if(<span class="kw">length</span>(x)&gt;<span class="dv">0</span>){
+   
+    habitats &lt;-<span class="st"> </span><span class="kw">species</span>(<span class="kw">species_names</span>(<span class="kw">load_taxa</span>()[x[[<span class="dv">1</span>]],]$SpecCode,<span class="dt">all_taxa =</span> <span class="kw">load_taxa</span>()))$DemersPelag
+    
+    habitats &lt;-<span class="st"> </span><span class="kw">table</span>(<span class="kw">unlist</span>(<span class="kw">lapply</span>(habitats,function(y) {
+      if(!<span class="kw">is.null</span>(y)) <span class="kw">strsplit</span>(y,<span class="st">'[;]'</span>)[[<span class="dv">1</span>]][<span class="dv">1</span>]
+      })))
+    habitat&lt;-<span class="kw">names</span>(<span class="kw">which.max</span>(habitats))
+    
+    } else {
+    habitat &lt;-<span class="st"> </span><span class="ot">NA</span>
+    }
+  habitat
+  }
+)
+)
+
+<span class="co"># any without a match?</span>
+<span class="kw">unique</span>(ppmr$Predator)[<span class="kw">is.na</span>(habitats)]</code></pre></div>
+<pre><code>##  [1] &quot;Loligo pealeii&quot;           &quot;Notolepis rissoi&quot;        
+##  [3] &quot;Paralichthys oblongus&quot;    &quot;Raja erinacea&quot;           
+##  [5] &quot;Gilbertidia sigalutes&quot;    &quot;Raja ocellata&quot;           
+##  [7] &quot;Aspitrigla cuculus&quot;       &quot;Leucoraja  fullonica   &quot; 
+##  [9] &quot;Raja naevus&quot;              &quot;Pleuragramma antarcticum&quot;</code></pre>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co"># manually assign habitats based on internet search...</span>
+habitats[<span class="kw">is.na</span>(habitats)] &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="st">'pelagic-neritic'</span>,<span class="st">'bathypelagic'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'benthopelagic'</span>)
+
+ppmr$habitat &lt;-<span class="st"> </span>habitats[<span class="kw">match</span>(ppmr$Predator,<span class="kw">unique</span>(ppmr$Predator))]
+
+<span class="kw">any</span>(<span class="kw">is.na</span>(ppmr$habitat))</code></pre></div>
+<pre><code>## [1] FALSE</code></pre>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">##################################################
+############## Subset ############################
+##################################################
+
+<span class="co"># only use data that is of &quot;good&quot; quality for this analysis</span>
+ppmr.best &lt;-<span class="st"> </span>ppmr %&gt;%<span class="st"> </span><span class="kw">filter</span>(Predator.quality.of.length.mass.conversion &lt;<span class="dv">4</span>,
+                            Prey.quality.of.conversion.to.mass &lt;<span class="dv">4</span>,
+                            !<span class="kw">is.na</span>(Individual.ID))</code></pre></div>
+<h3 id="estimating-a-taxonomically-hierarchical-model-in-jags">Estimating a taxonomically hierarchical model in JAGS</h3>
+<p>To now fit a Bayesian model, I use JAGS <span class="citation">(Plummer 2011)</span> this time around, using the log10 prey mass regressed against the log10 predator mass, covariates (mean annual temperature, mean primary production), and taxonomic and habitat effects..</p>
+<h4 id="data-prep-for-jags">Data prep for JAGS</h4>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">ppmr.data &lt;-<span class="st"> </span>ppmr.best
+
+<span class="co"># need numbers</span>
+n &lt;-<span class="st"> </span>function(x) <span class="kw">length</span>(<span class="kw">unique</span>(x))
+nidx &lt;-<span class="st"> </span>function(x) <span class="kw">as.numeric</span>(<span class="kw">factor</span>(x,<span class="dt">levels=</span><span class="kw">unique</span>(x)))
+ind =<span class="st"> </span><span class="kw">nidx</span>(ppmr.data$Individual.ID)
+
+## matching taxonomy for taxonomy indices
+<span class="co"># match unique individual to species (Predator)</span>
+PR &lt;-<span class="st"> </span><span class="kw">nidx</span>(ppmr.data$Predator)
+
+<span class="co"># match unique species to family </span>
+FAM &lt;-<span class="st"> </span><span class="kw">nidx</span>(ppmr.data$Family)
+
+<span class="co"># match unique family to order</span>
+ORD &lt;-<span class="st"> </span><span class="kw">nidx</span>(ppmr.data$Order)
+
+<span class="co"># match unique order to class</span>
+CL &lt;-<span class="st"> </span><span class="kw">nidx</span>(ppmr.data$Class)
+
+ppmr.data &lt;-<span class="st"> </span>ppmr.data %&gt;%<span class="st"> </span><span class="kw">mutate</span>(<span class="dt">log_ten_Pred =</span> <span class="kw">log10</span>(Predator.mass))
+
+<span class="co"># </span>
+COVS &lt;-<span class="st"> </span>ppmr.data %&gt;%<span class="st"> </span><span class="kw">select</span>(log_ten_Pred,
+                             Mean.annual.temp,
+                             Mean.PP
+                             ) %&gt;%
+<span class="st">  </span><span class="kw">data.frame</span>()
+  
+<span class="kw">crosscorr</span>(COVS)</code></pre></div>
+<pre><code>##                  log_ten_Pred Mean.annual.temp   Mean.PP
+## log_ten_Pred        1.0000000        0.7888103 0.6004915
+## Mean.annual.temp    0.7888103        1.0000000 0.2255941
+## Mean.PP             0.6004915        0.2255941 1.0000000</code></pre>
+<p>There's clearly a large amount of correlation between these covariates - using residuals may work better here. I'm regressing against the predictor mass, although that may not correspond to the cause-effect direction of these effects (large PP systems may allow for larger species), but it allows to keep the log10 predator size unchanged in the model.</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">mat &lt;-<span class="st"> </span><span class="kw">with</span>(COVS,<span class="kw">lm</span>(Mean.annual.temp~log_ten_Pred+Mean.PP))$res
+mpp &lt;-<span class="st"> </span><span class="kw">with</span>(COVS,<span class="kw">lm</span>(Mean.PP~log_ten_Pred))$res
+
+COVS$Mean.annual.temp &lt;-<span class="st"> </span>mat
+COVS$Mean.PP &lt;-<span class="st"> </span>mpp
+COVS$int &lt;-<span class="st"> </span><span class="kw">with</span>(COVS,log_ten_Pred*Mean.annual.temp)
+
+COVS&lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">intercept=</span><span class="dv">1</span>,COVS)</code></pre></div>
+<h4 id="running-the-model.">Running the model.</h4>
+<p>THIS TAKES LONG!</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co">#keep a set of obs back for prediction and model checking</span>
+PREYA =<span class="st"> </span><span class="kw">round</span>(<span class="kw">seq</span>(<span class="dv">1</span>,<span class="kw">nrow</span>(ppmr.data),<span class="dt">l=</span><span class="dv">100</span>))
+
+jagsdata &lt;-<span class="st"> </span><span class="kw">list</span>(<span class="dt">COVS=</span>COVS,
+                 <span class="dt">NCOVS =</span> <span class="kw">ncol</span>(COVS),
+                 <span class="dt">log_ten_Prey =</span> <span class="kw">log10</span>(ppmr.data$Prey.mass),
+                 <span class="dt">PREY =</span> (<span class="dv">1</span>:<span class="kw">nrow</span>(ppmr.data)),
+                 <span class="dt">PREYA=</span>PREYA,
+                 <span class="dt">HABITATS =</span> <span class="kw">n</span>(ppmr.data$habitat),
+                 <span class="dt">FEEDTYPES =</span> <span class="kw">n</span>(ppmr.data$Type.of.feeding.interaction),
+                 <span class="dt">GEOAREAS =</span> <span class="kw">n</span>(ppmr.data$Geographic.location),
+                 <span class="dt">NIND =</span> <span class="kw">n</span>(ppmr.data$Individual.ID),
+                 <span class="dt">NSPECIES =</span> <span class="kw">n</span>(ppmr.data$Predator),
+                 <span class="dt">NFAMILIES =</span> <span class="kw">n</span>(ppmr.data$Family),
+                 <span class="dt">NORDERS =</span> <span class="kw">n</span>(ppmr.data$Order),
+                 <span class="dt">NCLASSES =</span> <span class="kw">n</span>(ppmr.data$Class),
+                 <span class="dt">species =</span> PR[<span class="kw">match</span>(<span class="kw">unique</span>(ind),ind)],
+                 <span class="dt">family =</span> FAM[<span class="kw">match</span>(<span class="kw">unique</span>(PR),PR)],
+                 <span class="dt">fam=</span>FAM,
+                 <span class="dt">order =</span> ORD[<span class="kw">match</span>(<span class="kw">unique</span>(FAM),FAM)],
+                 <span class="dt">class =</span> CL[<span class="kw">match</span>(<span class="kw">unique</span>(ORD),ORD)],
+                 <span class="co"># effect indices</span>
+                 <span class="dt">habitat =</span> <span class="kw">nidx</span>(ppmr.data$habitat),
+                 <span class="dt">feedtype =</span> <span class="kw">nidx</span>(ppmr.data$Type.of.feeding.interaction),
+                 <span class="dt">geoarea =</span> <span class="kw">nidx</span>(ppmr.data$Geographic.location),
+                 <span class="dt">ind =</span> <span class="kw">nidx</span>(ppmr.data$Individual.ID)
+)
+
+JM &lt;-<span class="st"> </span><span class="kw">jags.parallel</span>(<span class="dt">model.file =</span> <span class="st">'include/PPMR_files/taxmodel_HC_pref.R'</span>,
+                    <span class="dt">n.iter =</span> <span class="dv">305000</span>,
+                    <span class="dt">n.burnin =</span> <span class="dv">5000</span>,
+                    <span class="dt">DIC =</span> T,
+                    <span class="dt">n.thin =</span> <span class="dv">50</span>,
+                    <span class="dt">data=</span>jagsdata,
+                    <span class="dt">n.chains =</span> <span class="dv">3</span>,
+                    <span class="dt">parameters.to.save =</span> <span class="kw">c</span>(<span class="st">'betas'</span>,
+                                           <span class="st">'sd.ind'</span>,
+                                           <span class="st">'sd.species'</span>,
+                                           <span class="st">'sd.family'</span>,
+                                           <span class="st">'sd.order'</span>,
+                                           <span class="st">'sd.class'</span>,
+                                           <span class="st">'sd.geoareafx'</span>,
+                                           <span class="st">'sd.habfx'</span>,
+                                           <span class="st">'sd.feedtypefx'</span>,
+                                           <span class="st">'tau'</span>,
+                                           <span class="st">'l_obs'</span>,
+                                           <span class="st">'l_obs_sp'</span>,
+                                           <span class="st">'l_obs_fam'</span>,
+                                           <span class="st">'l_obs_cl'</span>,
+                                           <span class="st">'l_obs_ord'</span>,
+                                           <span class="st">'log_ten_Prey_pred'</span>))</code></pre></div>
+<p>Model fitting takes a while - a few hours for three concurrent MCMC chains running in parallel. To inspect the outputs, one can first inspect the summary. I've suppressed output here as its far too long:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">JM</code></pre></div>
+<p>We can also look at the predictions at withheld data points from the dataset to look for systematic deviations:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">preds &lt;-<span class="st"> </span>JM$BUGSoutput$sims.list[<span class="kw">grepl</span>(<span class="st">'pred'</span>,<span class="kw">names</span>(JM$BUGSoutput$sims.list))]
+
+obs &lt;-<span class="st"> </span><span class="kw">log10</span>(ppmr.data$Prey.mass)[<span class="kw">round</span>(<span class="kw">seq</span>(<span class="dv">1</span>,<span class="kw">nrow</span>(ppmr.data),<span class="dt">l=</span><span class="dv">100</span>))]
+
+pp &lt;-<span class="st"> </span>reshape2::<span class="kw">melt</span>(preds) %&gt;%<span class="st"> </span><span class="kw">group_by</span>(Var2) %&gt;%
+<span class="st">  </span><span class="kw">summarise</span>(<span class="dt">means =</span> <span class="kw">mean</span>(value),
+            <span class="dt">q1 =</span> <span class="kw">quantile</span>(value,<span class="fl">0.025</span>),
+            <span class="dt">q11 =</span> <span class="kw">quantile</span>(value,<span class="fl">0.25</span>),
+            <span class="dt">q33 =</span> <span class="kw">quantile</span>(value,<span class="fl">0.75</span>),
+            <span class="dt">q3 =</span> <span class="kw">quantile</span>(value,<span class="fl">0.975</span>))
+
+pp$obs &lt;-<span class="st"> </span>obs
+
+<span class="kw">ggplot</span>(pp) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_point</span>(<span class="kw">aes</span>(<span class="dt">x=</span>obs, <span class="dt">y=</span>means),<span class="dt">size=</span><span class="dv">4</span>) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_linerange</span>(<span class="kw">aes</span>(<span class="dt">x=</span>obs, <span class="dt">y=</span>means,<span class="dt">ymin=</span>q1,<span class="dt">ymax=</span>q3),<span class="dt">size=</span><span class="dv">1</span>) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_linerange</span>(<span class="kw">aes</span>(<span class="dt">x=</span>obs, <span class="dt">y=</span>means,<span class="dt">ymin=</span>q11,<span class="dt">ymax=</span>q33),<span class="dt">size=</span><span class="dv">2</span>) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">theme_classic</span>() +<span class="st"> </span>
+<span class="st">  </span><span class="kw">xlab</span>(<span class="kw">expression</span>(Observed~log[<span class="dv">10</span>]~(prey~mass))) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">ylab</span>(<span class="kw">expression</span>(Predicted~log[<span class="dv">10</span>]~(prey~mass))) +
+<span class="st">  </span><span class="kw">geom_abline</span>(<span class="kw">aes</span>(<span class="dt">a=</span><span class="dv">0</span>,<span class="dt">b=</span><span class="dv">1</span>))</code></pre></div>
+<div class="figure">
+<img src="2015-11-03-Beta_pt2_files/figure-markdown/predictions-1.png" alt />
+
+</div>
+<p>Globally, model fit looks good judging from this subset of data points. This is obviously not a real cross-validation, but it gives an idea. Being somewhat happy with the model fit, it seems reasonable to look at the estimated effects.</p>
+<h3 id="drivers-of-ppmrs">Drivers of PPMRs</h3>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">sds &lt;-<span class="st"> </span>JM$BUGSoutput$sims.list[<span class="kw">grepl</span>(<span class="st">'sd'</span>,<span class="kw">names</span>(JM$BUGSoutput$sims.list))]
+msd &lt;-<span class="st"> </span>reshape2::<span class="kw">melt</span>(sds)
+
+msd &lt;-<span class="st"> </span>msd %&gt;%<span class="st"> </span>
+<span class="st">  </span><span class="kw">mutate</span>(<span class="dt">Factor =</span> <span class="kw">do.call</span>(<span class="st">'rbind'</span>,<span class="kw">strsplit</span>(L1,<span class="st">'sd.'</span>))[,<span class="dv">2</span>]) %&gt;%
+<span class="st">  </span><span class="kw">group_by</span>(Factor) %&gt;%
+<span class="st">  </span><span class="kw">summarise</span>(<span class="dt">means =</span> <span class="kw">median</span>(value),
+            <span class="dt">q1 =</span> <span class="kw">quantile</span>(value,<span class="fl">0.025</span>),
+            <span class="dt">q11 =</span> <span class="kw">quantile</span>(value,<span class="fl">0.25</span>),
+            <span class="dt">q33 =</span> <span class="kw">quantile</span>(value,<span class="fl">0.75</span>),
+            <span class="dt">q3 =</span> <span class="kw">quantile</span>(value,<span class="fl">0.975</span>))
+  
+msd$Factor &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="st">'Class'</span>,<span class="st">'Family'</span>,<span class="st">'Feedtype'</span>,<span class="st">'Geography/Study'</span>,<span class="st">'Habitat'</span>,<span class="st">'Individual'</span>,<span class="st">'Order'</span>,<span class="st">'Species'</span>)
+  
+msd$Factor &lt;-<span class="st"> </span><span class="kw">factor</span>(msd$Factor,<span class="dt">levels =</span> <span class="kw">rev</span>(<span class="kw">c</span>(<span class="st">'Individual'</span>,<span class="st">'Species'</span>,<span class="st">'Family'</span>,<span class="st">'Order'</span>,<span class="st">'Class'</span>,<span class="st">'Habitat'</span>,<span class="st">'Geography/Study'</span>,<span class="st">'Feedtype'</span>)))
+
+<span class="kw">ggplot</span>(msd) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_point</span>(<span class="kw">aes</span>(<span class="dt">x=</span>Factor, <span class="dt">y=</span>means),<span class="dt">size=</span><span class="dv">4</span>) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_linerange</span>(<span class="kw">aes</span>(<span class="dt">x=</span>Factor, <span class="dt">y=</span>means,<span class="dt">ymin=</span>q1,<span class="dt">ymax=</span>q3),<span class="dt">size=</span><span class="dv">1</span>) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_linerange</span>(<span class="kw">aes</span>(<span class="dt">x=</span>Factor, <span class="dt">y=</span>means,<span class="dt">ymin=</span>q11,<span class="dt">ymax=</span>q33),<span class="dt">size=</span><span class="dv">2</span>) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">theme_classic</span>() +<span class="st"> </span>
+<span class="st">  </span><span class="kw">coord_flip</span>() +<span class="st"> </span>
+<span class="st">  </span><span class="kw">ylab</span>(<span class="kw">expression</span>(Finite~population~variance~(log[<span class="dv">10</span>]~PPMR))) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">xlab</span>(<span class="st">'Effect'</span>)</code></pre></div>
+<div class="figure">
+<img src="2015-11-03-Beta_pt2_files/figure-markdown/scales_of_variability-1.png" alt />
+
+</div>
+<p>It looks as though the INLA model from the <a href="2015-10-20-Beta_pt1.html">previous post</a> was not far off - most of the variability is attributed to individual, species and family level effects. Order and especially class level effects do not contribute much, and neither does habitat or feed-type. There was a relatively large study level effect, which may be due to study effects or be an indicator of system specific PPMRs - which wouldn't be surprising given that the relative abundance of different size prey items likely differs among systems for a predator of the same size.</p>
+<h3 id="taxonomic-effects">Taxonomic effects</h3>
+<p>Another way to visualise the taxonomic effects is via the taxonomic hierarchy, plotting the predicted distribution of mean PPMRs at each taxonomic level:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">obss &lt;-<span class="st"> </span>JM$BUGSoutput$sims.list[<span class="kw">c</span>(<span class="st">'l_obs'</span>,<span class="st">'l_obs_sp'</span>,<span class="st">'l_obs_fam'</span>,<span class="st">'l_obs_cl'</span>,<span class="st">'l_obs_ord'</span>)]
+<span class="kw">colnames</span>(obss$l_obs) &lt;-<span class="st"> 'Overall'</span>
+<span class="kw">colnames</span>(obss$l_obs_fam) &lt;-<span class="st"> </span><span class="kw">unique</span>(ppmr.data$Family) 
+<span class="kw">colnames</span>(obss$l_obs_sp) &lt;-<span class="st"> </span><span class="kw">unique</span>(ppmr.data$Predator) 
+<span class="kw">colnames</span>(obss$l_obs_ord) &lt;-<span class="st"> </span><span class="kw">unique</span>(ppmr.data$Order) 
+<span class="kw">colnames</span>(obss$l_obs_cl) &lt;-<span class="st"> </span><span class="kw">unique</span>(ppmr.data$Class) 
+
+<span class="kw">names</span>(obss) &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="st">'Overall'</span>,<span class="st">'Species'</span>,<span class="st">'Family'</span>,<span class="st">'Class'</span>,<span class="st">'Order'</span>)
+
+mlobs &lt;-<span class="st"> </span><span class="kw">lapply</span>(<span class="dv">1</span>:<span class="dv">5</span>,function(x) <span class="kw">data.frame</span>(<span class="dt">Level=</span><span class="kw">names</span>(obss)[x], reshape2::<span class="kw">melt</span>(obss[[x]],<span class="dt">factorsAsStrings=</span>T),<span class="dt">stringsAsFactors=</span>F))
+
+mlobs$Var2 &lt;-<span class="st"> </span><span class="kw">as.character</span>(mlobs$Var2) 
+
+mlobs &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'rbind'</span>,mlobs) 
+mlobs$Level &lt;-<span class="st"> </span><span class="kw">factor</span>(mlobs$Level,<span class="dt">levels =</span> <span class="kw">c</span>(<span class="st">'Overall'</span>,<span class="st">'Class'</span>,<span class="st">'Order'</span>,<span class="st">'Family'</span>,<span class="st">'Species'</span>))
+
+niter=<span class="kw">nrow</span>(obss$Overall)
+
+mlobs &lt;-<span class="st"> </span>mlobs %&gt;%<span class="st"> </span>
+<span class="st">  </span><span class="kw">group_by</span>(Level) %&gt;%
+<span class="st">  </span><span class="kw">mutate</span>(<span class="dt">tax =</span> <span class="kw">rep</span>(<span class="dv">1</span>:<span class="kw">length</span>(<span class="kw">unique</span>(Var2)),<span class="dt">each=</span>niter))
+
+<span class="kw">require</span>(ggplot2)
+
+<span class="kw">ggplot</span>(mlobs,<span class="kw">aes</span>(<span class="dt">x=</span>value, <span class="dt">fill=</span><span class="kw">factor</span>(tax))) +<span class="st"> </span>
+<span class="st">    </span><span class="kw">facet_wrap</span>(~Level,<span class="dt">ncol=</span><span class="dv">1</span>) +<span class="st"> </span>
+<span class="st">    </span><span class="kw">geom_density</span>(<span class="kw">aes</span>(<span class="dt">y=</span>(..density..)/<span class="kw">max</span>(..density..)),<span class="dt">trim=</span>F,<span class="dt">alpha=</span><span class="fl">0.5</span>) +<span class="st">   </span><span class="co">#geom_density(aes(y=(..density../((10^x)^-2))/max(..density../((10^x)^-2))),trim=F,linetype=2,alpha=0.3) + </span>
+<span class="st">    </span><span class="kw">theme_classic</span>() +<span class="st"> </span>
+<span class="st">    </span><span class="kw">coord_cartesian</span>(<span class="dt">xlim=</span><span class="kw">c</span>(-<span class="dv">10</span>,<span class="dv">5</span>))+
+<span class="st">  </span><span class="kw">scale_fill_discrete</span>(<span class="dt">guide=</span><span class="st">'none'</span>)+
+<span class="st">    </span><span class="kw">ylab</span>(<span class="st">'Density'</span>)+
+<span class="st">    </span><span class="kw">xlab</span>(<span class="st">'log10(Prey/Predator)'</span>)</code></pre></div>
+<p><img src="2015-11-03-Beta_pt2_files/figure-markdown/taxonomic_prediction-1.png" alt="Figure: Predicted distribution of means for the next lower taxonomic level. For example, the distributions at the class level determine the order means within each class and so forth. At the species level, the distributions determine individual level PPMRs." /> <br> <br> This hierarchy clearly shows that there are wide, yet similar distributions for the over-all, class and order level distributions, but strong divergence at the family and species levels.</p>
+<h2 id="what-about-the-continuous-covariates">What about the continuous covariates?</h2>
+<p>These can be tabulated to inspect whether inferences from previous analyses hold up in this comprehensive analysis:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">ob &lt;-<span class="st"> </span>JM$BUGSoutput$sims.list[<span class="st">'betas'</span>]
+<span class="kw">colnames</span>(ob$betas) &lt;-<span class="st"> </span><span class="kw">colnames</span>(COVS)
+
+mob &lt;-<span class="st"> </span>ob %&gt;%<span class="st"> </span>reshape2::<span class="kw">melt</span>() %&gt;%
+<span class="st">  </span><span class="kw">mutate</span>(<span class="dt">Covariate=</span>Var2) %&gt;%
+<span class="st">  </span><span class="kw">group_by</span>(Covariate) %&gt;%
+<span class="st">  </span><span class="kw">summarise</span>(<span class="dt">Mean =</span> <span class="kw">mean</span>(value),
+            <span class="st">`</span><span class="dt">95% CI lower</span><span class="st">`</span> =<span class="st"> </span><span class="kw">quantile</span>(value,<span class="fl">0.025</span>),
+            <span class="st">`</span><span class="dt">1st quartile</span><span class="st">`</span> =<span class="st"> </span><span class="kw">quantile</span>(value,<span class="fl">0.25</span>),
+            <span class="dt">median =</span> <span class="kw">median</span>(value),
+            <span class="st">`</span><span class="dt">3rd quartile</span><span class="st">`</span> =<span class="st"> </span><span class="kw">quantile</span>(value,<span class="fl">0.75</span>),
+            <span class="st">`</span><span class="dt">95% CI upper</span><span class="st">`</span> =<span class="st"> </span><span class="kw">quantile</span>(value,<span class="fl">0.975</span>))
+
+<span class="kw">kable</span>(mob,<span class="dt">digits=</span><span class="dv">2</span>,<span class="dt">align=</span><span class="kw">c</span>(<span class="st">'l'</span>,<span class="st">'r'</span>,<span class="st">'r'</span>,<span class="st">'r'</span>,<span class="st">'r'</span>,<span class="st">'r'</span>,<span class="st">'r'</span>))</code></pre></div>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Covariate</th>
+<th align="right">Mean</th>
+<th align="right">95% CI lower</th>
+<th align="right">1st quartile</th>
+<th align="right">median</th>
+<th align="right">3rd quartile</th>
+<th align="right">95% CI upper</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">intercept</td>
+<td align="right">-2.45</td>
+<td align="right">-3.87</td>
+<td align="right">-3.04</td>
+<td align="right">-2.56</td>
+<td align="right">-1.82</td>
+<td align="right">-0.78</td>
+</tr>
+<tr class="even">
+<td align="left">log_ten_Pred</td>
+<td align="right">0.85</td>
+<td align="right">0.48</td>
+<td align="right">0.73</td>
+<td align="right">0.86</td>
+<td align="right">0.97</td>
+<td align="right">1.14</td>
+</tr>
+<tr class="odd">
+<td align="left">Mean.annual.temp</td>
+<td align="right">0.04</td>
+<td align="right">-0.11</td>
+<td align="right">-0.01</td>
+<td align="right">0.04</td>
+<td align="right">0.09</td>
+<td align="right">0.18</td>
+</tr>
+<tr class="even">
+<td align="left">Mean.PP</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+</tr>
+<tr class="odd">
+<td align="left">int</td>
+<td align="right">0.00</td>
+<td align="right">-0.01</td>
+<td align="right">0.00</td>
+<td align="right">0.00</td>
+<td align="right">0.01</td>
+<td align="right">0.01</td>
+</tr>
+<tr class="even">
+<td align="left"><br></td>
+<td align="right"></td>
+<td align="right"></td>
+<td align="right"></td>
+<td align="right"></td>
+<td align="right"></td>
+<td align="right"></td>
+</tr>
+</tbody>
+</table>
+<p>In agreement with the INLA analysis, the over-all intercept is lower than reported in <span class="citation">Barnes et al. (2010)</span>, with a mean of <code>-2.44813</code> vs a reported mean of 2.66 in <span class="citation">Barnes et al. (2010)</span>. The estimated effect of the predator size is nearly equivalent to that found by <span class="citation">Barnes et al. (2010)</span>. However, the 95% confidence intervals of all other parameters overlap zero.</p>
+<h2 id="how-to-get-back-to-predator-size-preference">How to get back to predator size-preference?</h2>
+<p>These inferences are for realised PPMRs, and are determined by local availability/relative abundance of prey sizes. Geographic/study effects may reflect differences in local availability. In theory, the community spectrum has a slope of around -2 <span class="citation">(Andersen and Beyer 2006)</span>. However, locally the slopes may be significantly different. What would our inferences about predator preference be given different slopes? This can be back-calculated over a range of slopes:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">ob &lt;-<span class="st"> </span>JM$BUGSoutput$sims.list[<span class="kw">c</span>(<span class="st">'tau'</span>,<span class="st">'betas'</span>)]
+
+slopes=<span class="kw">seq</span>(<span class="dv">1</span>,<span class="dv">3</span>,<span class="fl">0.1</span>); ddif =<span class="st"> </span>slopes
+for (i in <span class="dv">1</span>:<span class="kw">length</span>(slopes)){
+  
+  s =<span class="st"> </span>slopes[i]
+  
+  xs &lt;-<span class="st"> </span><span class="kw">seq</span>(-<span class="dv">5</span>,<span class="dv">1</span>,<span class="dt">l=</span><span class="fl">1e4</span>)
+  xsc &lt;-<span class="st"> </span>(<span class="dv">10</span>^xs)^-s
+  
+  oam &lt;-<span class="st"> </span><span class="kw">mean</span>(ob$betas[,<span class="dv">1</span>])
+  oasd &lt;-<span class="st"> </span><span class="kw">sqrt</span>(<span class="dv">1</span>/<span class="kw">mean</span>(ob$tau))
+  
+  dens &lt;-<span class="st"> </span><span class="kw">dnorm</span>(xs,oam,oasd)
+  sdens &lt;-<span class="st"> </span>dens/xsc
+  
+  ddif[i] &lt;-<span class="st"> </span>xs[<span class="kw">which.max</span>(sdens)]-xs[<span class="kw">which.max</span>(dens)]
+  
+}
+
+xsc &lt;-<span class="st"> </span>(<span class="dv">10</span>^xs)^-<span class="dv">2</span>
+xsc1 &lt;-<span class="st"> </span>(<span class="dv">10</span>^xs)^-<span class="fl">1.5</span>
+xsc2 &lt;-<span class="st"> </span>(<span class="dv">10</span>^xs)^-<span class="fl">2.5</span>
+
+ddens &lt;-<span class="st"> </span><span class="kw">tbl_df</span>(<span class="kw">data.frame</span>(dens)) %&gt;%<span class="st"> </span>
+<span class="st">  </span><span class="kw">mutate</span>(<span class="st">`</span><span class="dt">observed mean PPMR</span><span class="st">`</span> =<span class="st"> </span>dens,
+         <span class="st">`</span><span class="dt">preference, slope = 2</span><span class="st">`</span>  =<span class="st"> </span>(dens/xsc)/<span class="kw">max</span>(dens/xsc),
+         <span class="st">`</span><span class="dt">preference, slope = 1.5</span><span class="st">`</span> =<span class="st"> </span>(dens/xsc1)/<span class="kw">max</span>(dens/xsc1),
+         <span class="st">`</span><span class="dt">preference, slope = 2.5</span><span class="st">`</span> =<span class="st"> </span>(dens/xsc2)/<span class="kw">max</span>(dens/xsc2),
+         <span class="st">`</span><span class="dt">spectrum slope = 2</span><span class="st">`</span>=<span class="st"> </span>xsc,
+         <span class="st">`</span><span class="dt">spectrum slope = 1.5</span><span class="st">`</span>=<span class="st"> </span>xsc1,
+         <span class="st">`</span><span class="dt">spectrum slope = 2.5</span><span class="st">`</span>=<span class="st"> </span>xsc2) %&gt;%
+<span class="st">  </span><span class="kw">select</span>(-dens)
+
+mdens =<span class="st"> </span>reshape2::<span class="kw">melt</span>(ddens)
+mdens$xs &lt;-<span class="st"> </span>xs
+
+<span class="kw">ggplot</span>(mdens) +
+<span class="st">  </span><span class="kw">geom_line</span>(<span class="kw">aes</span>(<span class="dt">x=</span>xs,<span class="dt">y=</span>value,<span class="dt">col=</span>variable)) +
+<span class="st">  </span><span class="kw">theme_classic</span>()+
+<span class="st">  </span><span class="kw">scale_y_log10</span>() +<span class="st"> </span>
+<span class="st">  </span><span class="kw">ylab</span>(<span class="kw">expression</span>(log[<span class="dv">10</span>]~density))+
+<span class="st">  </span><span class="kw">xlab</span>(<span class="kw">expression</span>(log[<span class="dv">10</span>]~PPMR))+
+<span class="st">  </span><span class="kw">scale_color_discrete</span>(<span class="st">''</span>)</code></pre></div>
+<div class="figure">
+<img src="2015-11-03-Beta_pt2_files/figure-markdown/unnamed-chunk-8-1.png" alt />
+
+</div>
+<p>I'm not particularly sure of this calculation at this point; but it does suggest that over a range of spectrum slopes, the prey-preference is on average at 1/100th (<span class="math inline">10<sup>−2</sup></span>) of the prey size. This seems to suggest that previous analyses using a PPMR of 100 are close to the observed mean preference.</p>
+<h2 id="references">References</h2>
+<p><br></p>
+<div id="references" class="references">
+<div id="ref-andersen:asymptotic:2006">
+<p>Andersen, K. H., and J. E. Beyer. 2006. Asymptotic size determines species abundance in the marine size spectrum. The American Naturalist 168:54–61.</p>
+</div>
+<div id="ref-barnes:global:2010">
+<p>Barnes, C., D. Maxwell, D. C. Reuman, and S. Jennings. 2010. Global patterns in predator-prey size relationships reveal size dependency of trophic transfer efficiency. Ecology 91:222–232.</p>
+</div>
+<div id="ref-plummer:jags:2011">
+<p>Plummer, M. 2011. JAGS Version 3.1. 0 user manual. International Agency for Research on Cancer.</p>
+</div>
+</div>
+
+            </div>
+        </main>
+        <footer>
+        </footer>
+        <script src="//code.jquery.com/jquery-2.1.3.min.js"></script>
+        <script>
+        $(document).ready(function() {
+        $('#js-navigation-menu').removeClass("show");
+        $('#js-mobile-menu').on('click', function(e) {
+        e.preventDefault();
+        $('#js-navigation-menu').slideToggle(function(){
+        if($('#js-navigation-menu').is(':hidden')) {
+        $('#js-navigation-menu').removeAttr('style');
+        }
+        });
+        });
+        });
+        </script>
+    </body>
+</html>
