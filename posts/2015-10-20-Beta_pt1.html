@@ -168,8 +168,7 @@ ppmr.best &lt;-<span class="st"> </span>ppmr %&gt;%<span class="st"> </span><spa
                             Prey.quality.of.conversion.to.mass &lt;<span class="dv">4</span>,
                             !<span class="kw">is.na</span>(Individual.ID))</code></pre></div>
 <h3 id="testing-the-waters-with-inla">Testing the waters with INLA</h3>
-<p>I now fit a Bayesian model in INLA <span class="citation">(Rue et al. 2014
-+0100))</span>, using the log10 prey mass regressed against the log10 predator mass and the covariates; taxonomy, habitat and feed type are supplied as random effects. I also added a random effect for geographic location, which pretty much proxies for the study in the original data.</p>
+<p>I now fit a Bayesian model in INLA <span class="citation">(Rue et al. 2014)</span>, using the log10 prey mass regressed against the log10 predator mass and the covariates; taxonomy, habitat and feed type are supplied as random effects. I also added a random effect for geographic location, which pretty much proxies for the study in the original data.</p>
 <p>I also let INLA calculate the CPO and pit values, as the latter can provide a clue about model calibration - they should be uniformly distributed if the model is well specified.</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">best.model.int &lt;-<span class="st">  </span><span class="kw">inla</span>(<span class="kw">log10</span>(Prey.mass) ~<span class="st"> </span><span class="kw">log10</span>(Predator.mass)*Mean.annual.temp+
 <span class="st">                      </span>SD.annual.temp +
@@ -306,8 +305,7 @@ ppmr.best &lt;-<span class="st"> </span>ppmr %&gt;%<span class="st"> </span><spa
 <p>Nakazawa, T., M. Ushio, and M. Kondoh. 2011. Scale dependence of predator–prey mass ratio: Determinants and applications. The Role of Body Size in Multispecies Systems 45:269.</p>
 </div>
 <div id="ref-Rue:INLA:2014">
-<p>Rue, H., S. Martino, F. Lindgren, D. Simpson, A. Riebler, and E. T. Krainski. 2014
-+0100). INLA: Functions which allow to perform full bayesian analysis of latent gaussian models using integrated nested laplace approximaxion.</p>
+<p>Rue, H., S. Martino, F. Lindgren, D. Simpson, A. Riebler, and E. T. Krainski. 2014. INLA: Functions which allow to perform full bayesian analysis of latent gaussian models using integrated nested laplace approximaxion.</p>
 </div>
 </div>
 
