@@ -2,11 +2,16 @@
 title: "Getting started: History matching size-based models"
 author: "Philipp Neubauer"
 date: "13/05/2015"
-bibliography: "include/GP_emulators/History_match.bib"
+output: md_document
 ---
 
+History matching is a method for fitting complex computer simulation models to data, using likelihood free methods that are based on Bayesian theory of analysis of computer simulations [@kennedy:2001:bayesian]. For more information on history matching itself, see @kennedy:2001:bayesian and in the context of ecological and epidemiological simulations, see @andrianakis:bayesian:2015.
+
+The intriguing prospect of history matching is that is can be used with complex simulation models that would be difficult to fit to data using likelihood based methods. For example, MCMC for long-running simulations would likely involve running the full simulation at every iteration to get a likelihood. In history matching, the simulation runs are replaced by statistical emulators based on Gaussian Processes, which can make the model fitting orders of magnitude faster.
+
+This post represents a first try at using history matching for ecosystem models, and in the context of this project, for size-spectra. The history match is done using the community size-spectrum slope as data and figuring out which parameter combination most likely lead to the observed slope (here from a simulated truth)
+
 ```{r echo=F,message=F,results='hide'}
-library("knitcitations")
 require("mizer")
 require("parallel")
 require("ggplot2")
@@ -15,15 +20,11 @@ require(dplyr)
 require(knitr)
 opts_chunk$set(cache=TRUE)
 
-cleanbib()
-options("citation_format" = "pandoc")
-bib = read.bibtex('include/GP_emulators/History_match.bib')
 ```
 
-History matching size-based models
-====================================
+# History matching size-based models
 
-Starting with mizer to get a community model up and running, see if I can emulate it using Gaussian processes, then use history matching to discard parameter values that provide poor matches to data. I'll closely follow `r citet(bib[["andrianakis_bayesian_2015"]])` in this first try.
+Starting with mizer to get a community model up and running, see if I can emulate it using Gaussian processes, then use history matching to discard parameter values that provide poor matches to data. I'll closely follow [@andrianakis:bayesian:2015] in this first try.
 
 ```{r warning=FALSE,message=FALSE}
 
@@ -38,7 +39,9 @@ sim <- project(truth, effort = 0, t_max = 20, dt=0.1)
 
 data <- getCommunitySlope(sim)[20,]
 ```
-Now define a hypercube to sample from and calibrate the Gaussian process that will (hopefully!) emulate the size spectrum outputs.
+Arbitrarily, I chose n, q, h and $\beta$ as the uncertain parameters. This is entirely arbitrary at this stage; I just want to figure out how this works...
+
+First, I need to define a hypercube to sample from and calibrate the Gaussian process that will (hopefully!) emulate the size spectrum outputs.
 
 ```{r warning=FALSE,message=FALSE}
 #Set prior search space
@@ -88,9 +91,9 @@ outputs1 <- simdat[,1]
 outputs2 <- simdat[,2]
 
 ```
-Following `r citet("andrianakis_bayesian_2015")` - estimate the length scale from data. Simulated annealing seems to work best here as the surface in 4 dimensions is multimodal and other optim method choices get stuck in suboptimal modes. Wonder if there's better alternatives (besides MCMC or numerical integration, which seem to defeat the purpose.)
+Following @andrianakis:bayesian:2015 - estimate the length scale from data. Simulated annealing seems to work best here as the surface in 4 dimensions is multimodal and other optim method choices get stuck in suboptimal modes. Wonder if there's better alternatives (besides MCMC or numerical integration, which seem to defeat the purpose.)
 
-Using `r citet(bib[["vernon_galaxy_2010"]])`, set the initial guess at a conservative 0.125 times the range of the inputs given the cubic regressor.
+Using @vernon:2010:galaxy, set the initial guess at a conservative 0.125 times the range of the inputs given the cubic regressor.
 
 ```{r}
 
@@ -123,6 +126,7 @@ A_w1_o2 = corr.matrix(input,scales=pars_w1_o2);
 Ainv_w1_o2 <- solve(A_w1_o2)
 
 ```
+# Wave 1
 
 Next, need to predict to a whole lot of points and calculate implausibility. Using the emulator package for this:
 
@@ -236,8 +240,7 @@ mean(test_impl>3)
 
 About `r round(100*mean(test_impl>3))` percent rejected at this try. Now re-run simulator and GP emulation & history matching for the next wave...
 
-Wave 2
----------
+## Wave 2
 
 ```{r}
    
@@ -434,8 +437,19 @@ keepers_w3 <- predictn %>% filter(Implausibility<3) %>% select(-Implausibility)
 nrow(keepers_w3)/length(new_points_sim_list_w3)
 
 ```
-I could probably keep going here, but will elave it at this for a trail - `r round(100*nrow(keepers_w3)/length(new_points_sim_list_w3))`% of points remaining. 
+I could probably keep going here, but will leave it at this for a trail - `r round(100*nrow(keepers_w3)/length(new_points_sim_list_w3))`% of points remaining. How do the remaining parameter estiamtes stack up against the first round (previous histograms)?
 
-```{r echo=F,message=F}
-write.bibtex(file="include/GP_emulators/HM_community_model.bib")
+```{r compare}
+
+hist(keepers_w3$n)
+hist(keepers_w3$q)
+hist(keepers_w3$beta)
+hist(keepers_w3$h)
 ```
+
+It looks as though the history matching got us quite a bit closer to the true values,although the distributions for $\beta$ and $q$ are peaked towards the extremes, whereas the distribution of $n$ is peaked near the true value of 0.8. h seems poorly constrained by the slope, so I might need to think of other metrics to constrain h. But this could indicate that for the purpose of a community spectrum, the value of h is less important.
+
+I should really have a look at the predicted spectrum slopes from the GPs vs the real slopes to see how well the GP is doing at predicting the slope. That'll be next time...
+
+## References
+<br>

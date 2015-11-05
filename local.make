@@ -26,12 +26,10 @@ deps/%/.docker: deps/%/Dockerfile deps/%/*
 
 site/posts/%.md: site/posts/%.rmd deps/siter/.docker
 	$(if $(HASDOCKER),docker run --rm -u $$(id -u):$$(id -g) -v $$PWD:/work -w /work ffwdfish/siter) \
-		Rscript -e 'require("rmarkdown"); rmarkdown::render("$(<)")'
+		Rscript -e 'require("rmarkdown"); rmarkdown::render("$(<)",output_options =list(variant = "markdown"))'
 
 deploy: ../FFWD-Fish-gh-pages site
 ifeq (refs/heads/gh-pages,$(shell cd ../FFWD-Fish-gh-pages && git symbolic-ref HEAD))
 	cp -r site/_site/* $<
-	$(if $(shell cd $< && git add -NA && git diff),cd $< && git add -A && git commit -amdeploy && git push)
-else
-	$(error Not deploying because $< does not exist or does not have gh-pages checked out)
+	cd $< && git add -A && git commit -amdeploy && git push origin gh-pages
 endif

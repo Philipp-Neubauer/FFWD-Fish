@@ -5,6 +5,12 @@ title: Contact
 Philipp Neubauer
 ---------------
 
+<br> <br>
+
+<img src="images/phil.png" width="200" height="300" />
+
+<br> <br>
+
 Fisheries ecologist @ \
 Dragonfly Science \
 PO Box 27535  \

@@ -1,5 +1,5 @@
 ---
-title: "Sources of variation in PPMRs"
+title: "Sources of variation in PPMRs: PT1 - INLA analysis"
 date: "20/10/2015"
 author: "Philipp Neubauer"
 output: md_document
@@ -18,12 +18,34 @@ require(dplyr)
 # options("citation_format" = "pandoc")
 # bib = read.bibtex('include/FF_Fish_bib/FFF.bib')
 ```
+<br>
 
+# Sources of variation in PPMRs: PT1 - INLA analysis
 
-Background
-====================================
+<br>
+<br>
 
-Many size based models for marine ecosystems 
+## Background
+
+<br>
+Many size-spectrum models for marine ecosystems are based on size specific predation, and specifically, the preferred predator-prey mass ratio $\beta$. It seems that most recent theoretical/simulation papers have used a value of $\beta=100$. This number was based on @jennings:use:2002, who used stable isotope analysis to relate size to trophic level. 
+
+Few (any?) papers acknowledge that this is the observed PPMR, and is the integral over the preference and availability kernels (e.g., following @hartvig:food:2011, the food available for a predator of size $m$ is (simplified): $\phi(m) =\int N(m_p)~s(m_p,m)~d~m_p$, where $m_p$ is the prey mass, $N(m_p)$ is number of fish at mass $m_p$ and $s(m_p,m)$ is the prey selectivity kernel.)
+
+A meta-analysis of stomach content data by @barnes:global:2010 found both geographical differences (or study specific, the two factors seem largely confounded in the study) and a positive relationship between the PPMR and predator mass. The over-all mean PPMR was found to be higher ($2.66+0.24\times log_{10}(m)$). 
+
+Subsequent in depth analyses of that dataset found both strong taxonomic components as well as site and species specific relationships between the PPMR and predator mass [@nakazawa:scale:2011]. Furthermore, model selection in another study found a temperature signal in the biomass trends, suggesting that changes in the PPMR with predator mass are temperature dependant [@gibert:temperature:2014-1].
+
+## A Bayesian analysis using INLA
+
+<br>
+In order to use size-spectra and otehr models based on size-based predation for strategic decision making in real ecosystems, a key question remains: What drivers are important to consider for plug-in values of PPMRs, and what are reasonable values to use in strategic models.
+
+This first post takes a glimpse at drivers of the PPMR using Bayesian rendom effects models implemnted in INLA. The idea is to partition variability into taxonomic, habitat and predation components, where the latter relates to predator/prey size, feeding mode etc. For this I will use the dataset supplied with @barnes:global:2010, and supplement it with detailed taxonomic and habitat data, using the taxize package [@Chamberlain:taxize:2013; @Chamberlain:taxize:2014] and the rfishbase package [@Boettiger:rfishbase:2012], respectively.
+
+### Preparing the data
+
+The first step is to load the data, downloaded from the [ecology archives](http://esapubs.org/archive/ecol/E089/051/metadata.htm). 
 
 ```{r }
 require(dplyr)
@@ -32,11 +54,18 @@ require(INLA)
 ppmr.tab <-read.csv('include/PPMR_files/PPMR.csv',header=T,na.strings = 'n/a',stringsAsFactors = F)
 ppmr <- tbl_df(ppmr.tab)
 
+# convert all weights to mg
 ppmr$Prey.mass[ppmr$Prey.mass.unit=='mg'] <- ppmr$Prey.mass[ppmr$Prey.mass.unit=='mg'] /1000
 
+# numeric Latitude
 ppmr$Latitude <- as.numeric(substr(ppmr$Latitude,start = 1,stop = 2))
+# filter insectivorous fish
 ppmr <- ppmr %>% filter(!Type.of.feeding.interaction %in% c('insectivorous','predacious/piscivorous'))
+```
 
+I then standardise numerical variables to check relative importance, and use taxize and rfishbase to get the covariates:
+
+```{r}
 std <- function(x) (x-mean(x))/(2*sd(x))
 ppmr <- ppmr %>% mutate(Mean.annual.temp = std(Mean.annual.temp),
                 SD.annual.temp = std(SD.annual.temp),
@@ -51,28 +80,22 @@ ppmr <- ppmr %>% mutate(Mean.annual.temp = std(Mean.annual.temp),
 
 require("taxize")
 
-# taxonomy of unresolved names
+
+# taxonomy of unresolved names, fix some bad entries manually
 us <- unique(ppmr$Predator)
 us[us=='Urophysis chuss'] <- 'Urophycis chuss'
 us[us=='Leucoraja  fullonica   '] <- 'Leucoraja  fullonica'
 us[us=='Myoxocephalus octodecimspinosus'] <- 'Myoxocephalus octodecemspinosus'
 
+# get rid of leading or trailing white spaces in species names
 trim <- function (x) gsub("^\\s+|\\s+$", "", x)
 us <-trim(us)
 nus<- strsplit(us,split = ' sp.',fixed=T)
 
+# get taxonomy
+cs  <- classification(nus, db = 'ncbi')
 
-cs <- classification(nus, db = 'itis')
-
-# check names for un-resolved names
-urn <- which(unlist(lapply(cs,length))==1)
-csu <- classification(us[urn], db = 'col',rows=1)
-cs[urn] <- csu
-
-urn2 <- which(unlist(lapply(cs,length))==1)
-cuss <- classification(us[urn2], db = 'ncbi',rows=1)
-cs[urn2] <- cuss 
-
+# assign taxonomy
 ppmr$Class <- unlist(lapply(cs,function(x) x$name[x$rank=='Class' |x$rank=='class' ]))[match(ppmr$Predator,unique(ppmr$Predator))]
 
 ppmr$Order <- unlist(lapply(cs,function(x) x$name[x$rank=='Order' | x$rank=='order']))[match(ppmr$Predator,unique(ppmr$Predator))]
@@ -83,38 +106,32 @@ ppmr$Family <- unlist(lapply(cs,function(x) x$name[x$rank=='Family' | x$rank=='f
 ################ Habitats ######################## 
 ##################################################
 
-# get habitat and taxonomy from fishbase and other DBs
+# get habitat from fishbase and other DBs
 require(rfishbase)
 
-fish.data <- loadCache()
-
 # %in% doesn't work, need grepl as some ScientificNames don't match - makes it really slow
-match_tax <- function (species, fish.data = NULL, path = NULL) {
+match_tax <- function (sp, fish.data = NULL, path = NULL) {
    
     if (is.null(fish.data)) 
-        fish.data <- loadCache(path = path)
+        fish.data <- fishbase
         
-    matches <- vector('list',length(species))
-    for (i in 1:length(species)){
-    matches[[i]] <- which(sapply(fish.data, function(x) grepl(species[i],x$ScientificName) | grepl(species[i],x$Genus) | grepl(species[i],x$Family)| grepl(species[i],x$Class)))
+    matches <- vector('list',length(sp))
+    for (i in 1:length(sp)){
+    matches[[i]] <- which(do.call('c',lapply(split(fish.data,1:nrow(fish.data)), function(x) grepl(sp[[i]],paste(x$Genus,x$Species,collapse=' ')) | grepl(sp[[i]],x$Genus) | grepl(sp[[i]],x$Family)| grepl(sp[[i]],x$Class))))
     }
     return(matches)
 }
 
-
+# parallelise this call
 sp_match <- parallel::mclapply(nus,match_tax,mc.cores=4)
-#save(sp_match, file = 'fb_species_match.rda')
-#load(file = 'fb_species_match.rda')
-
 sp_match <- do.call('c',sp_match)
 
-# get habitat for FB species. For higher taxonomic groupings, 
+# get habitat for FB species. 
 
 habitats <- do.call('c',lapply(sp_match,function(x) {
   if(length(x)>0){
-    habitats<- list()
-    for (i in 1:length(x))
-      habitats[[i]] <- fish.data[[x[i]]]$habitat
+   
+    habitats <- species(species_names(load_taxa()[x[[1]],]$SpecCode,all_taxa = load_taxa()))$DemersPelag
     
     habitats <- table(unlist(lapply(habitats,function(y) {
       if(!is.null(y)) strsplit(y,'[;]')[[1]][1]
@@ -129,13 +146,16 @@ habitats <- do.call('c',lapply(sp_match,function(x) {
 )
 )
 
+# any without a match?
 unique(ppmr$Predator)[is.na(habitats)]
 
+# manually assign habitats based on internet search...
 habitats[is.na(habitats)] <- c('pelagic-neritic','bathypelagic','demersal','demersal','demersal','demersal','demersal','demersal','demersal','benthopelagic')
 
 ppmr$habitat <- habitats[match(ppmr$Predator,unique(ppmr$Predator))]
 
 any(is.na(ppmr$habitat))
+
 ##################################################
 ############## Subset ############################
 ##################################################
@@ -143,13 +163,18 @@ any(is.na(ppmr$habitat))
 ppmr.better <- ppmr %>% filter(Predator.quality.of.length.mass.conversion <5,
                             Prey.quality.of.conversion.to.mass <5)
 
+# only use data that is of "good" quality for this analysis
 ppmr.best <- ppmr %>% filter(Predator.quality.of.length.mass.conversion <4,
                             Prey.quality.of.conversion.to.mass <4,
                             !is.na(Individual.ID))
 ```
-#######################
-##### Best Models #####
-#######################
+
+### Testing the waters with INLA
+
+I now fit a Bayesian model in INLA [@Rue:INLA:2014], using the log10 prey mass regressed against the log10 predator mass and the covariates; taxonomy, habitat and feed type are supplied as random effects. I also added a random effect for geographic location, which pretty much proxies for the study in the original data.
+
+I also let INLA calculate the CPO and pit values, as the latter can provide a clue about model calibration - they should be uniformly distributed if the model is well specified.
+
 ```{r}
 best.model.int <-  inla(log10(Prey.mass) ~ log10(Predator.mass)*Mean.annual.temp+
                       SD.annual.temp +
@@ -170,54 +195,36 @@ best.model.int <-  inla(log10(Prey.mass) ~ log10(Predator.mass)*Mean.annual.temp
                     control.compute = list(dic=TRUE,cpo=T),
                     control.predictor = list(compute=T)
 )
+```
 
+### Model fit and results
 
+A summary of the model fit is given here: 
 
+```{r}
 summary(best.model.int)
-plot(best.model.int)
+```
+
+The summary suggests that inferences made in @barnes:global:2010, @gibert:temperature:2014-1 and @nakazawa:scale:2011 all hold up in a comprehensive analysisof the data: the effects for predator size and its interaction with temperature are unlikely to be zero. Taxonomic variability was high, but was inferred only at the family level: at higher taxonomic groupings, the sd of random effects was extremely small. Similarly, habitat did not seem an important driver of realised PPMRs. The over-all mean PPMR, however, was inferred to be 162:1, which is quite a bit lower than that found in @barnes:global:2010. Furthermore, mean primary prodcution was negatively related to the ratio of prey to predator mass, indicating a larger PPMR in productive systems.
+
+A look at model fits indicates an ok fit with some over-dispersion (peak in the pit histogram):
+
+```{r bunch_o_figs, fig.height=6, fig.width=6}
+#Predicted values vs observations from the model
 plot(best.model.int$summary.linear.predictor$`0.5quant`,log10(ppmr.best$Prey.mass))
 abline(a=0,b=1)
+```
 
--mean(log(best.model.int$cpo$cpo))
+
+
+```{r bunch_o_figs2, fig.height=6, fig.width=6}
+# pit histogram
 hist(best.model.int$cpo$pit)
-hist(best.model.int$cpo$cpo)
-```
-
-#########################
-##### Better Models #####
-#########################
-
-```{r} 
-# 
-# better.model.int <-  inla(log10(Prey.mass) ~ log10(Predator.mass)*Mean.annual.temp+
-#                       SD.annual.temp +
-#                       #f(log10(Pmass),model='rw2', diagonal=1e-5) + 
-#                       f(Predator,model='iid') + 
-#                       f(Geographic.location,model='iid')+
-#                       f(Type.of.feeding.interaction,model='iid')+
-#                       f(factor(Individual.ID),model='iid')+
-#                       f(Order,model='iid')+
-#                       f(Class,model='iid')+
-#                       f(habitat,model='iid')+
-#                       f(Family,model='iid')+
-#                       #f(Specific.habitat,model='iid')+
-#                       Depth +
-#                       #Latitude + 
-#                       Mean.PP,
-#                     data = ppmr.better,
-#                     control.compute = list(dic=TRUE,cpo=T),
-#                     control.predictor = list(compute=T)
-# )
-# 
-# summary(better.model.int)
-# #plot(better.model.int)
-# plot(better.model.int$summary.linear.predictor$`0.5quant`,log10(ppmr.better$Prey.mass))
-# abline(a=0,b=1)
-# 
-# -mean(log(better.model.int$cpo$cpo))
-# hist(better.model.int$cpo$pit)
 
 ```
 
-References
-====================================
+The pit histogram, as well as the low variace attributed to the higher taxonomic groupings in the INLA model make me suspicious that the formulation of independent random effects in this case estiamtes theiur contribution correctly or produces reasonable predictions at higher taxonomic levels. Indeed, the taxonomy is by nature nested, but it seems difficult to represent this explicitly in INLA (but perhaps I just didn't find the right way!). I'll try a more sophisticated approach for the next go at this...TBC
+
+
+## References
+<br>
