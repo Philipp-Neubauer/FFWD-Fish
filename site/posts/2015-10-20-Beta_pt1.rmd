@@ -5,7 +5,6 @@ author: "Philipp Neubauer"
 output: md_document
 ---
 
-
 ```{r echo=F,message=F,results='hide',warning=F}
 require(knitr)
 opts_chunk$set(cache=TRUE,warning=F,message=F)
@@ -34,14 +33,14 @@ Few (any?) papers acknowledge that this is the observed PPMR, and is the integra
 
 A meta-analysis of stomach content data by @barnes:global:2010 found both geographical differences (or study specific, the two factors seem largely confounded in the study) and a positive relationship between the PPMR and predator mass. The over-all mean PPMR was found to be higher ($2.66+0.24\times log_{10}(m)$). 
 
-Subsequent in depth analyses of that dataset found both strong taxonomic components as well as site and species specific relationships between the PPMR and predator mass [@nakazawa:scale:2011]. Furthermore, model selection in another study found a temperature signal in the biomass trends, suggesting that changes in the PPMR with predator mass are temperature dependant [@gibert:temperature:2014-1].
+Subsequent in depth analyses of that dataset found both strong taxonomic components as well as site and species specific relationships between the PPMR and predator mass [@nakazawa:scale:2011]. Furthermore, model selection in another study found a temperature signal in the biomass trends, suggesting that changes in the PPMR with predator mass are temperature dependent [@gibert:temperature:2014-1].
 
 ## A Bayesian analysis using INLA
 
 <br>
-In order to use size-spectra and otehr models based on size-based predation for strategic decision making in real ecosystems, a key question remains: What drivers are important to consider for plug-in values of PPMRs, and what are reasonable values to use in strategic models.
+In order to use size-spectra and other models based on size-based predation for strategic decision making in real ecosystems, a key question remains: What drivers are important to consider for plug-in values of PPMRs, and what are reasonable values to use in strategic models.
 
-This first post takes a glimpse at drivers of the PPMR using Bayesian rendom effects models implemnted in INLA. The idea is to partition variability into taxonomic, habitat and predation components, where the latter relates to predator/prey size, feeding mode etc. For this I will use the dataset supplied with @barnes:global:2010, and supplement it with detailed taxonomic and habitat data, using the taxize package [@Chamberlain:taxize:2013; @Chamberlain:taxize:2014] and the rfishbase package [@Boettiger:rfishbase:2012], respectively.
+This first post takes a glimpse at drivers of the PPMR using Bayesian random effects models implemented in INLA. The idea is to partition variability into taxonomic, habitat and predation components, where the latter relates to predator/prey size, feeding mode etc. For this I will use the dataset supplied with @barnes:global:2010, and supplement it with detailed taxonomic and habitat data, using the taxize package [@Chamberlain:taxize:2013; @Chamberlain:taxize:2014] and the rfishbase package [@Boettiger:rfishbase:2015], respectively.
 
 ### Preparing the data
 
@@ -205,9 +204,9 @@ A summary of the model fit is given here:
 summary(best.model.int)
 ```
 
-The summary suggests that inferences made in @barnes:global:2010, @gibert:temperature:2014-1 and @nakazawa:scale:2011 all hold up in a comprehensive analysisof the data: the effects for predator size and its interaction with temperature are unlikely to be zero. Taxonomic variability was high, but was inferred only at the family level: at higher taxonomic groupings, the sd of random effects was extremely small. Similarly, habitat did not seem an important driver of realised PPMRs. The over-all mean PPMR, however, was inferred to be 162:1, which is quite a bit lower than that found in @barnes:global:2010. Furthermore, mean primary prodcution was negatively related to the ratio of prey to predator mass, indicating a larger PPMR in productive systems.
+The summary suggests that inferences made in @barnes:global:2010, @gibert:temperature:2014-1 and @nakazawa:scale:2011 all hold up in a comprehensive analysis of the data: the effects for predator size and its interaction with temperature are unlikely to be zero. Taxonomic variability was high, but was inferred only at the individual and species level: at higher taxonomic groupings (e.g., Family, Order), the SD (precision) of random effects was extremely small (large). Similarly, habitat did not seem an important driver of realised PPMRs. The over-all mean PPMR, however, was inferred to be 123:1, which is quite a bit lower than that found in @barnes:global:2010 and more in line with @jennings:use:2002. Furthermore, mean primary production was negatively related to the ratio of prey to predator mass, indicating a larger PPMR in productive systems.
 
-A look at model fits indicates an ok fit with some over-dispersion (peak in the pit histogram):
+A look at model fits indicates an OK fit with some over-dispersion (peak in the pit histogram):
 
 ```{r bunch_o_figs, fig.height=6, fig.width=6}
 #Predicted values vs observations from the model
@@ -223,7 +222,7 @@ hist(best.model.int$cpo$pit)
 
 ```
 
-The pit histogram, as well as the low variace attributed to the higher taxonomic groupings in the INLA model make me suspicious that the formulation of independent random effects in this case estiamtes theiur contribution correctly or produces reasonable predictions at higher taxonomic levels. Indeed, the taxonomy is by nature nested, but it seems difficult to represent this explicitly in INLA (but perhaps I just didn't find the right way!). I'll try a more sophisticated approach for the next go at this...TBC
+The pit histogram, as well as the low variance attributed to the higher taxonomic groupings in the INLA model make me suspicious that the formulation of independent random effects in this case estimates their contribution correctly or produces reasonable predictions at higher taxonomic levels. Taxonomy is by nature nested, but it seems difficult to represent this explicitly in INLA (but perhaps I just didn't find the right way!). I'll try a more sophisticated approach for the next go at this...TBC
 
 
 ## References
