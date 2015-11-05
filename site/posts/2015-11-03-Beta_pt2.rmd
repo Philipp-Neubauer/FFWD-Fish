@@ -80,7 +80,7 @@ ppmr$Order <- unlist(lapply(cs,function(x) x$name[x$rank=='Order' | x$rank=='ord
 ppmr$Family <- unlist(lapply(cs,function(x) x$name[x$rank=='Family' | x$rank=='family']))[match(ppmr$Predator,unique(ppmr$Predator))]
 ```
 
-To get the habitats, I use a majority vote among habitats of species within higher taxonomic lelves for predators that are not resolved to species level.
+To get the habitats, I use a majority vote among habitats of species within higher taxonomic levels for predators that are not resolved to species level.
 
 ```{r}
 ##################################################
@@ -367,7 +367,7 @@ ggplot(mlobs,aes(x=value, fill=factor(tax))) +
 ```
 <br>
 <br>
-This hierarchy clearly shows that there are wide, yet similar distibutions for the over-all, class and order level distributions, but strong divergence at the family and species levels.
+This hierarchy clearly shows that there are wide, yet similar distributions for the over-all, class and order level distributions, but strong divergence at the family and species levels.
 
 ## What about the continuous covariates?
 
@@ -396,7 +396,7 @@ In agreement with the INLA analysis, the over-all intercept is lower than report
 
 ## How to get back to predator size-preference?
 
-These inferences are for realised PPMRs, and are determined by local availibility/relative abundanve of prey sizes. Geographic/study effects may reflect differences in local availibility, 
+These inferences are for realised PPMRs, and are determined by local availability/relative abundance of prey sizes. Geographic/study effects may reflect differences in local availability. In theory, the community spectrum has a slope of around -2 [@andersen:asymptotic:2006]. However, locally the slopes may be significantly different. What would our inferences about predator preference be given different slopes? This can be back-calculated over a range of slopes:
 
 ```{r}
 
@@ -446,6 +446,8 @@ ggplot(mdens) +
   scale_color_discrete('')
 
 ```
+
+I'm not particularly sure of this calculation at this point; but it does suggest that over a range of spectrum slopes, the prey-preference is on average at 1/100th ($10^-2$) of the prey size. This seems to suggest that previous analyses using a PPMR of 100 are close to the observed mean preference.
 
 ## References
 <br>
