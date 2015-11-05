@@ -18,7 +18,6 @@
                         <li class="nav-link"><a href="../index.html">Home</a></li>
                         <li class="nav-link"><a href="../archive.html">Archive</a></li>
                         <li class="nav-link"><a href="../about.html">About</a></li>
-                        <li class="nav-link"><a href="../people.html">People</a></li>
                         <li class="nav-link"><a href="../contact.html">Contact</a></li>
                     </ul>
                 </div>
@@ -28,193 +27,197 @@
             
             <div class="container">
             <div class="info">
+    <br>
+    
     Posted on October 20, 2015
+    
+        by Philipp Neubauer
     
 </div>
 
-<h1 id="background">Background</h1>
-<p>Many size-spectrum models for marine ecosystems are based on size specific predation. It seems that most recent theoretical/simulation papers have used a value of <em>β</em> = 100 for <span class="citation">(<span class="citeproc-not-found" data-reference-id="barnes"><strong>???</strong></span>_global_2010)</span></p>
-<pre><code>require(dplyr)
-require(INLA)
+<p><br></p>
+<h1 id="sources-of-variation-in-ppmrs-pt1---inla-analysis">Sources of variation in PPMRs: PT1 - INLA analysis</h1>
+<p><br> <br></p>
+<h2 id="background">Background</h2>
+<p><br> Many size-spectrum models for marine ecosystems are based on size specific predation, and specifically, the preferred predator-prey mass ratio <span class="math inline"><em>β</em></span>. It seems that most recent theoretical/simulation papers have used a value of <span class="math inline"><em>β</em> = 100</span>. This number was based on <span class="citation">Jennings et al. (2002)</span>, who used stable isotope analysis to relate size to trophic level.</p>
+<p>Few (any?) papers acknowledge that this is the observed PPMR, and is the integral over the preference and availability kernels (e.g., following <span class="citation">Hartvig et al. (2011)</span>, the food available for a predator of size <span class="math inline"><em>m</em></span> is (simplified): <span class="math inline"><em>ϕ</em>(<em>m</em>)=∫<em>N</em>(<em>m</em><sub><em>p</em></sub>) <em>s</em>(<em>m</em><sub><em>p</em></sub>, <em>m</em>) <em>d</em> <em>m</em><sub><em>p</em></sub></span>, where <span class="math inline"><em>m</em><sub><em>p</em></sub></span> is the prey mass, <span class="math inline"><em>N</em>(<em>m</em><sub><em>p</em></sub>)</span> is number of fish at mass <span class="math inline"><em>m</em><sub><em>p</em></sub></span> and <span class="math inline"><em>s</em>(<em>m</em><sub><em>p</em></sub>, <em>m</em>)</span> is the prey selectivity kernel.)</p>
+<p>A meta-analysis of stomach content data by <span class="citation">Barnes et al. (2010)</span> found both geographical differences (or study specific, the two factors seem largely confounded in the study) and a positive relationship between the PPMR and predator mass. The over-all mean PPMR was found to be higher (<span class="math inline">2.66 + 0.24 × <em>l</em><em>o</em><em>g</em><sub>10</sub>(<em>m</em>)</span>).</p>
+<p>Subsequent in depth analyses of that dataset found both strong taxonomic components as well as site and species specific relationships between the PPMR and predator mass <span class="citation">(Nakazawa et al. 2011)</span>. Furthermore, model selection in another study found a temperature signal in the biomass trends, suggesting that changes in the PPMR with predator mass are temperature dependant <span class="citation">(Gibert and DeLong 2014)</span>.</p>
+<h2 id="a-bayesian-analysis-using-inla">A Bayesian analysis using INLA</h2>
+<p><br> In order to use size-spectra and otehr models based on size-based predation for strategic decision making in real ecosystems, a key question remains: What drivers are important to consider for plug-in values of PPMRs, and what are reasonable values to use in strategic models.</p>
+<p>This first post takes a glimpse at drivers of the PPMR using Bayesian rendom effects models implemnted in INLA. The idea is to partition variability into taxonomic, habitat and predation components, where the latter relates to predator/prey size, feeding mode etc. For this I will use the dataset supplied with <span class="citation">Barnes et al. (2010)</span>, and supplement it with detailed taxonomic and habitat data, using the taxize package <span class="citation">(Chamberlain and Szocs 2013, Chamberlain et al. 2014)</span> and the rfishbase package <span class="citation">(Boettiger et al. 2012)</span>, respectively.</p>
+<h3 id="preparing-the-data">Preparing the data</h3>
+<p>The first step is to load the data, downloaded from the <a href="http://esapubs.org/archive/ecol/E089/051/metadata.htm">ecology archives</a>.</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">require</span>(dplyr)
+<span class="kw">require</span>(INLA)
 
-ppmr.tab &lt;-read.csv('include/PPMR_files/PPMR.csv',header=T,na.strings = 'n/a',stringsAsFactors = F)
-ppmr &lt;- tbl_df(ppmr.tab)
+ppmr.tab &lt;-<span class="kw">read.csv</span>(<span class="st">'include/PPMR_files/PPMR.csv'</span>,<span class="dt">header=</span>T,<span class="dt">na.strings =</span> <span class="st">'n/a'</span>,<span class="dt">stringsAsFactors =</span> F)
+ppmr &lt;-<span class="st"> </span><span class="kw">tbl_df</span>(ppmr.tab)
 
-ppmr$Prey.mass[ppmr$Prey.mass.unit=='mg'] &lt;- ppmr$Prey.mass[ppmr$Prey.mass.unit=='mg'] /1000
+<span class="co"># convert all weights to mg</span>
+ppmr$Prey.mass[ppmr$Prey.mass.unit==<span class="st">'mg'</span>] &lt;-<span class="st"> </span>ppmr$Prey.mass[ppmr$Prey.mass.unit==<span class="st">'mg'</span>] /<span class="dv">1000</span>
 
-ppmr$Latitude &lt;- as.numeric(substr(ppmr$Latitude,start = 1,stop = 2))
-ppmr &lt;- ppmr %&gt;% filter(!Type.of.feeding.interaction %in% c('insectivorous','predacious/piscivorous'))
-
-std &lt;- function(x) (x-mean(x))/(2*sd(x))
-ppmr &lt;- ppmr %&gt;% mutate(Mean.annual.temp = std(Mean.annual.temp),
-                SD.annual.temp = std(SD.annual.temp),
-                Latitude = std(Latitude),
-                Mean.PP = std(Mean.PP),
-                Depth = std(Depth),
-                Pmass=Predator.mass)
+<span class="co"># numeric Latitude</span>
+ppmr$Latitude &lt;-<span class="st"> </span><span class="kw">as.numeric</span>(<span class="kw">substr</span>(ppmr$Latitude,<span class="dt">start =</span> <span class="dv">1</span>,<span class="dt">stop =</span> <span class="dv">2</span>))
+<span class="co"># filter insectivorous fish</span>
+ppmr &lt;-<span class="st"> </span>ppmr %&gt;%<span class="st"> </span><span class="kw">filter</span>(!Type.of.feeding.interaction %in%<span class="st"> </span><span class="kw">c</span>(<span class="st">'insectivorous'</span>,<span class="st">'predacious/piscivorous'</span>))</code></pre></div>
+<p>I then standardise numerical variables to check relative importance, and use taxize and rfishbase to get the covariates:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">std &lt;-<span class="st"> </span>function(x) (x-<span class="kw">mean</span>(x))/(<span class="dv">2</span>*<span class="kw">sd</span>(x))
+ppmr &lt;-<span class="st"> </span>ppmr %&gt;%<span class="st"> </span><span class="kw">mutate</span>(<span class="dt">Mean.annual.temp =</span> <span class="kw">std</span>(Mean.annual.temp),
+                <span class="dt">SD.annual.temp =</span> <span class="kw">std</span>(SD.annual.temp),
+                <span class="dt">Latitude =</span> <span class="kw">std</span>(Latitude),
+                <span class="dt">Mean.PP =</span> <span class="kw">std</span>(Mean.PP),
+                <span class="dt">Depth =</span> <span class="kw">std</span>(Depth),
+                <span class="dt">Pmass=</span>Predator.mass)
 
 ################################
 ###### Taxise ##################
 ################################
 
-require(&quot;taxize&quot;)
-
-# taxonomy of unresolved names
-us &lt;- unique(ppmr$Predator)
-us[us=='Urophysis chuss'] &lt;- 'Urophycis chuss'
-us[us=='Leucoraja  fullonica   '] &lt;- 'Leucoraja  fullonica'
-us[us=='Myoxocephalus octodecimspinosus'] &lt;- 'Myoxocephalus octodecemspinosus'
-
-trim &lt;- function (x) gsub(&quot;^\\s+|\\s+$&quot;, &quot;&quot;, x)
-us &lt;-trim(us)
-nus&lt;- strsplit(us,split = ' sp.',fixed=T)
+<span class="kw">require</span>(<span class="st">&quot;taxize&quot;</span>)
 
 
-cs &lt;- classification(nus, db = 'itis')
+<span class="co"># taxonomy of unresolved names, fix some bad entries manually</span>
+us &lt;-<span class="st"> </span><span class="kw">unique</span>(ppmr$Predator)
+us[us==<span class="st">'Urophysis chuss'</span>] &lt;-<span class="st"> 'Urophycis chuss'</span>
+us[us==<span class="st">'Leucoraja  fullonica   '</span>] &lt;-<span class="st"> 'Leucoraja  fullonica'</span>
+us[us==<span class="st">'Myoxocephalus octodecimspinosus'</span>] &lt;-<span class="st"> 'Myoxocephalus octodecemspinosus'</span>
 
-# check names for un-resolved names
-urn &lt;- which(unlist(lapply(cs,length))==1)
-csu &lt;- classification(us[urn], db = 'col',rows=1)
-cs[urn] &lt;- csu
+<span class="co"># get rid of leading or trailing white spaces in species names</span>
+trim &lt;-<span class="st"> </span>function (x) <span class="kw">gsub</span>(<span class="st">&quot;^</span><span class="ch">\\</span><span class="st">s+|</span><span class="ch">\\</span><span class="st">s+$&quot;</span>, <span class="st">&quot;&quot;</span>, x)
+us &lt;-<span class="kw">trim</span>(us)
+nus&lt;-<span class="st"> </span><span class="kw">strsplit</span>(us,<span class="dt">split =</span> <span class="st">' sp.'</span>,<span class="dt">fixed=</span>T)
 
-urn2 &lt;- which(unlist(lapply(cs,length))==1)
-cuss &lt;- classification(us[urn2], db = 'ncbi',rows=1)
-cs[urn2] &lt;- cuss 
+<span class="co"># get taxonomy</span>
+cs  &lt;-<span class="st"> </span><span class="kw">classification</span>(nus, <span class="dt">db =</span> <span class="st">'ncbi'</span>)
 
-ppmr$Class &lt;- unlist(lapply(cs,function(x) x$name[x$rank=='Class' |x$rank=='class' ]))[match(ppmr$Predator,unique(ppmr$Predator))]
+<span class="co"># assign taxonomy</span>
+ppmr$Class &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(cs,function(x) x$name[x$rank==<span class="st">'Class'</span> |x$rank==<span class="st">'class'</span> ]))[<span class="kw">match</span>(ppmr$Predator,<span class="kw">unique</span>(ppmr$Predator))]
 
-ppmr$Order &lt;- unlist(lapply(cs,function(x) x$name[x$rank=='Order' | x$rank=='order']))[match(ppmr$Predator,unique(ppmr$Predator))]
+ppmr$Order &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(cs,function(x) x$name[x$rank==<span class="st">'Order'</span> |<span class="st"> </span>x$rank==<span class="st">'order'</span>]))[<span class="kw">match</span>(ppmr$Predator,<span class="kw">unique</span>(ppmr$Predator))]
 
-ppmr$Family &lt;- unlist(lapply(cs,function(x) x$name[x$rank=='Family' | x$rank=='family']))[match(ppmr$Predator,unique(ppmr$Predator))]
+ppmr$Family &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(cs,function(x) x$name[x$rank==<span class="st">'Family'</span> |<span class="st"> </span>x$rank==<span class="st">'family'</span>]))[<span class="kw">match</span>(ppmr$Predator,<span class="kw">unique</span>(ppmr$Predator))]
 
 ##################################################
 ################ Habitats ######################## 
 ##################################################
 
-# get habitat and taxonomy from fishbase and other DBs
-require(rfishbase)
+<span class="co"># get habitat from fishbase and other DBs</span>
+<span class="kw">require</span>(rfishbase)
 
-fish.data &lt;- loadCache()
-
-# %in% doesn't work, need grepl as some ScientificNames don't match - makes it really slow
-match_tax &lt;- function (species, fish.data = NULL, path = NULL) {
+<span class="co"># %in% doesn't work, need grepl as some ScientificNames don't match - makes it really slow</span>
+match_tax &lt;-<span class="st"> </span>function (sp, <span class="dt">fish.data =</span> <span class="ot">NULL</span>, <span class="dt">path =</span> <span class="ot">NULL</span>) {
    
-    if (is.null(fish.data)) 
-        fish.data &lt;- loadCache(path = path)
+    if (<span class="kw">is.null</span>(fish.data)) 
+        fish.data &lt;-<span class="st"> </span>fishbase
         
-    matches &lt;- vector('list',length(species))
-    for (i in 1:length(species)){
-    matches[[i]] &lt;- which(sapply(fish.data, function(x) grepl(species[i],x$ScientificName) | grepl(species[i],x$Genus) | grepl(species[i],x$Family)| grepl(species[i],x$Class)))
+    matches &lt;-<span class="st"> </span><span class="kw">vector</span>(<span class="st">'list'</span>,<span class="kw">length</span>(sp))
+    for (i in <span class="dv">1</span>:<span class="kw">length</span>(sp)){
+    matches[[i]] &lt;-<span class="st"> </span><span class="kw">which</span>(<span class="kw">do.call</span>(<span class="st">'c'</span>,<span class="kw">lapply</span>(<span class="kw">split</span>(fish.data,<span class="dv">1</span>:<span class="kw">nrow</span>(fish.data)), function(x) <span class="kw">grepl</span>(sp[[i]],<span class="kw">paste</span>(x$Genus,x$Species,<span class="dt">collapse=</span><span class="st">' '</span>)) |<span class="st"> </span><span class="kw">grepl</span>(sp[[i]],x$Genus) |<span class="st"> </span><span class="kw">grepl</span>(sp[[i]],x$Family)|<span class="st"> </span><span class="kw">grepl</span>(sp[[i]],x$Class))))
     }
-    return(matches)
+    <span class="kw">return</span>(matches)
 }
 
+<span class="co"># parallelise this call</span>
+sp_match &lt;-<span class="st"> </span>parallel::<span class="kw">mclapply</span>(nus,match_tax,<span class="dt">mc.cores=</span><span class="dv">4</span>)
+sp_match &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'c'</span>,sp_match)
 
-sp_match &lt;- parallel::mclapply(nus,match_tax,mc.cores=4)
-#save(sp_match, file = 'fb_species_match.rda')
-#load(file = 'fb_species_match.rda')
+<span class="co"># get habitat for FB species. </span>
 
-sp_match &lt;- do.call('c',sp_match)
-
-# get habitat for FB species. For higher taxonomic groupings, 
-
-habitats &lt;- do.call('c',lapply(sp_match,function(x) {
-  if(length(x)&gt;0){
-    habitats&lt;- list()
-    for (i in 1:length(x))
-      habitats[[i]] &lt;- fish.data[[x[i]]]$habitat
+habitats &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'c'</span>,<span class="kw">lapply</span>(sp_match,function(x) {
+  if(<span class="kw">length</span>(x)&gt;<span class="dv">0</span>){
+   
+    habitats &lt;-<span class="st"> </span><span class="kw">species</span>(<span class="kw">species_names</span>(<span class="kw">load_taxa</span>()[x[[<span class="dv">1</span>]],]$SpecCode,<span class="dt">all_taxa =</span> <span class="kw">load_taxa</span>()))$DemersPelag
     
-    habitats &lt;- table(unlist(lapply(habitats,function(y) {
-      if(!is.null(y)) strsplit(y,'[;]')[[1]][1]
+    habitats &lt;-<span class="st"> </span><span class="kw">table</span>(<span class="kw">unlist</span>(<span class="kw">lapply</span>(habitats,function(y) {
+      if(!<span class="kw">is.null</span>(y)) <span class="kw">strsplit</span>(y,<span class="st">'[;]'</span>)[[<span class="dv">1</span>]][<span class="dv">1</span>]
       })))
-    habitat&lt;-names(which.max(habitats))
+    habitat&lt;-<span class="kw">names</span>(<span class="kw">which.max</span>(habitats))
     
     } else {
-    habitat &lt;- NA
+    habitat &lt;-<span class="st"> </span><span class="ot">NA</span>
     }
   habitat
   }
 )
 )
 
-unique(ppmr$Predator)[is.na(habitats)]
+<span class="co"># any without a match?</span>
+<span class="kw">unique</span>(ppmr$Predator)[<span class="kw">is.na</span>(habitats)]</code></pre></div>
+<pre><code>##  [1] &quot;Loligo pealeii&quot;           &quot;Notolepis rissoi&quot;        
+##  [3] &quot;Paralichthys oblongus&quot;    &quot;Raja erinacea&quot;           
+##  [5] &quot;Gilbertidia sigalutes&quot;    &quot;Raja ocellata&quot;           
+##  [7] &quot;Aspitrigla cuculus&quot;       &quot;Leucoraja  fullonica   &quot; 
+##  [9] &quot;Raja naevus&quot;              &quot;Pleuragramma antarcticum&quot;</code></pre>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co"># manually assign habitats based on internet search...</span>
+habitats[<span class="kw">is.na</span>(habitats)] &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="st">'pelagic-neritic'</span>,<span class="st">'bathypelagic'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'demersal'</span>,<span class="st">'benthopelagic'</span>)
 
-## [1] &quot;Loligo pealeii&quot;          &quot;Notolepis rissoi&quot;       
-## [3] &quot;Paralichthys oblongus&quot;   &quot;Raja erinacea&quot;          
-## [5] &quot;Gilbertidia sigalutes&quot;   &quot;Raja ocellata&quot;          
-## [7] &quot;Leucoraja  fullonica   &quot; &quot;Raja naevus&quot;            
-## [9] &quot;Nototheniops larseni&quot;
+ppmr$habitat &lt;-<span class="st"> </span>habitats[<span class="kw">match</span>(ppmr$Predator,<span class="kw">unique</span>(ppmr$Predator))]
 
-habitats[is.na(habitats)] &lt;- c('pelagic-neritic','bathypelagic','demersal','demersal','demersal','demersal','demersal','demersal','demersal','benthopelagic')
-
-ppmr$habitat &lt;- habitats[match(ppmr$Predator,unique(ppmr$Predator))]
-
-any(is.na(ppmr$habitat))
-
-## [1] FALSE
-
-##################################################
+<span class="kw">any</span>(<span class="kw">is.na</span>(ppmr$habitat))</code></pre></div>
+<pre><code>## [1] FALSE</code></pre>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">##################################################
 ############## Subset ############################
 ##################################################
 
-ppmr.better &lt;- ppmr %&gt;% filter(Predator.quality.of.length.mass.conversion &lt;5,
-                            Prey.quality.of.conversion.to.mass &lt;5)
+ppmr.better &lt;-<span class="st"> </span>ppmr %&gt;%<span class="st"> </span><span class="kw">filter</span>(Predator.quality.of.length.mass.conversion &lt;<span class="dv">5</span>,
+                            Prey.quality.of.conversion.to.mass &lt;<span class="dv">5</span>)
 
-ppmr.best &lt;- ppmr %&gt;% filter(Predator.quality.of.length.mass.conversion &lt;4,
-                            Prey.quality.of.conversion.to.mass &lt;4,
-                            !is.na(Individual.ID))</code></pre>
-<p id="section"></p>
-<h5 id="best-models">Best Models</h5>
-<p id="section-1"></p>
-<pre><code>best.model.int &lt;-  inla(log10(Prey.mass) ~ log10(Predator.mass)*Mean.annual.temp+
-                      SD.annual.temp +
-                      #f(log10(Pmass),model='rw2', diagonal=1e-5) + 
-                      f(Predator,model='iid') + 
-                      f(Geographic.location,model='iid')+
-                      f(Type.of.feeding.interaction,model='iid')+
-                      f(factor(Individual.ID),model='iid')+
-                      f(Order,model='iid')+
-                      f(Class,model='iid')+
-                      f(habitat,model='iid')+
-                      f(Family,model='iid')+
-                      #f(Specific.habitat,model='iid')+
-                      Depth +
-                      #Latitude + 
-                      Mean.PP,
-                    data = ppmr.best,
-                    control.compute = list(dic=TRUE,cpo=T),
-                    control.predictor = list(compute=T)
-)
-
-
-
-summary(best.model.int)
-
-## 
+<span class="co"># only use data that is of &quot;good&quot; quality for this analysis</span>
+ppmr.best &lt;-<span class="st"> </span>ppmr %&gt;%<span class="st"> </span><span class="kw">filter</span>(Predator.quality.of.length.mass.conversion &lt;<span class="dv">4</span>,
+                            Prey.quality.of.conversion.to.mass &lt;<span class="dv">4</span>,
+                            !<span class="kw">is.na</span>(Individual.ID))</code></pre></div>
+<h3 id="testing-the-waters-with-inla">Testing the waters with INLA</h3>
+<p>I now fit a Bayesian model in INLA <span class="citation">(Rue et al. 2014
++0100))</span>, using the log10 prey mass regressed against the log10 predator mass and the covariates; taxonomy, habitat and feed type are supplied as random effects. I also added a random effect for geographic location, which pretty much proxies for the study in the original data.</p>
+<p>I also let INLA calculate the CPO and pit values, as the latter can provide a clue about model calibration - they should be uniformly distributed if the model is well specified.</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">best.model.int &lt;-<span class="st">  </span><span class="kw">inla</span>(<span class="kw">log10</span>(Prey.mass) ~<span class="st"> </span><span class="kw">log10</span>(Predator.mass)*Mean.annual.temp+
+<span class="st">                      </span>SD.annual.temp +
+<span class="st">                      </span><span class="co">#f(log10(Pmass),model='rw2', diagonal=1e-5) + </span>
+<span class="st">                      </span><span class="kw">f</span>(Predator,<span class="dt">model=</span><span class="st">'iid'</span>) +<span class="st"> </span>
+<span class="st">                      </span><span class="kw">f</span>(Geographic.location,<span class="dt">model=</span><span class="st">'iid'</span>)+
+<span class="st">                      </span><span class="kw">f</span>(Type.of.feeding.interaction,<span class="dt">model=</span><span class="st">'iid'</span>)+
+<span class="st">                      </span><span class="kw">f</span>(<span class="kw">factor</span>(Individual.ID),<span class="dt">model=</span><span class="st">'iid'</span>)+
+<span class="st">                      </span><span class="kw">f</span>(Order,<span class="dt">model=</span><span class="st">'iid'</span>)+
+<span class="st">                      </span><span class="kw">f</span>(Class,<span class="dt">model=</span><span class="st">'iid'</span>)+
+<span class="st">                      </span><span class="kw">f</span>(habitat,<span class="dt">model=</span><span class="st">'iid'</span>)+
+<span class="st">                      </span><span class="kw">f</span>(Family,<span class="dt">model=</span><span class="st">'iid'</span>)+
+<span class="st">                      </span><span class="co">#f(Specific.habitat,model='iid')+</span>
+<span class="st">                      </span>Depth +
+<span class="st">                      </span><span class="co">#Latitude + </span>
+<span class="st">                      </span>Mean.PP,
+                    <span class="dt">data =</span> ppmr.best,
+                    <span class="dt">control.compute =</span> <span class="kw">list</span>(<span class="dt">dic=</span><span class="ot">TRUE</span>,<span class="dt">cpo=</span>T),
+                    <span class="dt">control.predictor =</span> <span class="kw">list</span>(<span class="dt">compute=</span>T)
+)</code></pre></div>
+<h3 id="model-fit-and-results">Model fit and results</h3>
+<p>A summary of the model fit is given here:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">summary</span>(best.model.int)</code></pre></div>
+<pre><code>## 
 ## Call:
 ## c(&quot;inla(formula = log10(Prey.mass) ~ log10(Predator.mass) * Mean.annual.temp + &quot;,  &quot;    SD.annual.temp + f(Predator, model = \&quot;iid\&quot;) + f(Geographic.location, &quot;,  &quot;    model = \&quot;iid\&quot;) + f(Type.of.feeding.interaction, model = \&quot;iid\&quot;) + &quot;,  &quot;    f(factor(Individual.ID), model = \&quot;iid\&quot;) + f(Order, model = \&quot;iid\&quot;) + &quot;,  &quot;    f(Class, model = \&quot;iid\&quot;) + f(habitat, model = \&quot;iid\&quot;) + f(Family, &quot;,  &quot;    model = \&quot;iid\&quot;) + Depth + Mean.PP, data = ppmr.best, control.compute = list(dic = TRUE, &quot;,  &quot;    cpo = T), control.predictor = list(compute = T))&quot;)
 ## 
 ## Time used:
 ##  Pre-processing    Running inla Post-processing           Total 
-##          1.7319        187.6226          1.4964        190.8509 
+##          2.5232        272.3183          1.2328        276.0743 
 ## 
 ## Fixed effects:
 ##                                          mean     sd 0.025quant 0.5quant
-## (Intercept)                           -2.2161 0.4319    -3.0810  -2.2107
-## log10(Predator.mass)                   0.8738 0.0457     0.7839   0.8738
-## Mean.annual.temp                       1.1605 0.8385    -0.5599   1.1797
-## SD.annual.temp                         0.1534 1.0431    -1.8260   0.1236
-## Depth                                 -1.2168 0.7080    -2.5252  -1.2509
-## Mean.PP                               -0.7346 0.3482    -1.4277  -0.7340
-## log10(Predator.mass):Mean.annual.temp  0.1788 0.0554     0.0700   0.1787
+## (Intercept)                           -2.0986 0.3946    -2.9005  -2.0891
+## log10(Predator.mass)                   0.8646 0.0453     0.7753   0.8647
+## Mean.annual.temp                       0.8738 0.8799    -0.9171   0.9143
+## SD.annual.temp                         0.8886 1.1505    -1.3620   0.8818
+## Depth                                 -0.9497 0.8127    -2.2860  -1.0169
+## Mean.PP                               -0.8536 0.3500    -1.5039  -0.8644
+## log10(Predator.mass):Mean.annual.temp  0.1753 0.0552     0.0669   0.1753
 ##                                       0.975quant    mode kld
-## (Intercept)                              -1.3812 -2.1998   0
-## log10(Predator.mass)                      0.9633  0.8739   0
-## Mean.annual.temp                          2.7667  1.2101   0
-## SD.annual.temp                            2.2997  0.0643   0
-## Depth                                     0.3028 -1.3035   0
-## Mean.PP                                  -0.0488 -0.7337   0
-## log10(Predator.mass):Mean.annual.temp     0.2875  0.1787   0
+## (Intercept)                              -1.3487 -2.0773   0
+## log10(Predator.mass)                      0.9532  0.8649   0
+## Mean.annual.temp                          2.4544  0.9471   0
+## SD.annual.temp                            3.1752  0.8793   0
+## Depth                                     0.7513 -1.0766   0
+## Mean.PP                                  -0.1480 -0.8726   0
+## log10(Predator.mass):Mean.annual.temp     0.2835  0.1754   0
 ## 
 ## Random effects:
 ## Name   Model
@@ -229,80 +232,83 @@ summary(best.model.int)
 ## 
 ## Model hyperparameters:
 ##                                                mean        sd 0.025quant
-## Precision for the Gaussian observations       7.481 1.174e-01      7.259
-## Precision for Predator                        4.936 2.792e+00      1.096
-## Precision for Geographic.location            10.052 7.017e+00      1.649
-## Precision for Type.of.feeding.interaction   551.834 5.664e+02     53.335
-## Precision for factor(Individual.ID)           4.930 2.642e-01      4.443
-## Precision for Order                       14821.898 1.763e+04    931.633
-## Precision for Class                       17574.134 1.847e+04   1219.887
-## Precision for habitat                     20047.572 1.933e+04   1237.363
-## Precision for Family                          1.540 7.753e-01      0.620
+## Precision for the Gaussian observations       7.481 1.170e-01     7.2590
+## Precision for Geographic.location             9.079 7.095e+00     1.5589
+## Precision for Predator                        1.273 3.749e-01     0.5932
+## Precision for Type.of.feeding.interaction   573.938 5.774e+02    50.6217
+## Precision for factor(Individual.ID)           4.961 2.644e-01     4.4722
+## Precision for Order                       19462.135 1.890e+04  1272.0609
+## Precision for Class                       16042.542 1.766e+04  1077.8208
+## Precision for habitat                     20029.042 1.924e+04  1204.4973
+## Precision for Family                      15978.116 1.762e+04  1063.6941
 ##                                            0.5quant 0.975quant     mode
-## Precision for the Gaussian observations       7.477      7.720    7.466
-## Precision for Predator                        4.449     11.590    3.060
-## Precision for Geographic.location             8.446     27.815    4.734
-## Precision for Type.of.feeding.interaction   385.571   2044.619  148.220
-## Precision for factor(Individual.ID)           4.918      5.480    4.890
-## Precision for Order                        9428.148  61373.577 2492.628
-## Precision for Class                       12050.185  66670.535 3337.375
-## Precision for habitat                     14356.244  70929.049 3279.316
-## Precision for Family                          1.350      3.547    1.062
+## Precision for the Gaussian observations       7.478      7.718    7.469
+## Precision for Geographic.location             7.220     27.645    4.127
+## Precision for Predator                        1.266      2.014    1.234
+## Precision for Type.of.feeding.interaction   405.322   2101.621  141.752
+## Precision for factor(Individual.ID)           4.950      5.511    4.923
+## Precision for Order                       13911.587  69281.296 3430.782
+## Precision for Class                       10700.136  63102.813 2915.287
+## Precision for habitat                     14360.221  70233.378 3165.792
+## Precision for Family                      10644.986  62921.371 2865.652
 ## 
-## Expected number of effective parameters(std dev): 1038.19(11.56)
-## Number of equivalent replicates : 9.337 
+## Expected number of effective parameters(std dev): 1037.84(11.46)
+## Number of equivalent replicates : 9.341 
 ## 
-## Deviance Information Criterion: 9044.72
-## Effective number of parameters: 1038.96
+## Deviance Information Criterion (DIC) ...: 9043.64
+## Effective number of parameters .........: 1038.39
 ## 
-## Marginal Likelihood:  -5308.91 
+## Marginal log-Likelihood:  -5305.44 
 ## CPO and PIT are computed
 ## 
-## Posterior marginals for linear predictor and fitted values computed
+## Posterior marginals for linear predictor and fitted values computed</code></pre>
+<p>The summary suggests that inferences made in <span class="citation">Barnes et al. (2010)</span>, <span class="citation">Gibert and DeLong (2014)</span> and <span class="citation">Nakazawa et al. (2011)</span> all hold up in a comprehensive analysisof the data: the effects for predator size and its interaction with temperature are unlikely to be zero. Taxonomic variability was high, but was inferred only at the family level: at higher taxonomic groupings, the sd of random effects was extremely small. Similarly, habitat did not seem an important driver of realised PPMRs. The over-all mean PPMR, however, was inferred to be 162:1, which is quite a bit lower than that found in <span class="citation">Barnes et al. (2010)</span>. Furthermore, mean primary prodcution was negatively related to the ratio of prey to predator mass, indicating a larger PPMR in productive systems.</p>
+<p>A look at model fits indicates an ok fit with some over-dispersion (peak in the pit histogram):</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co">#Predicted values vs observations from the model</span>
+<span class="kw">plot</span>(best.model.int$summary.linear.predictor$<span class="st">`</span><span class="dt">0.5quant</span><span class="st">`</span>,<span class="kw">log10</span>(ppmr.best$Prey.mass))
+<span class="kw">abline</span>(<span class="dt">a=</span><span class="dv">0</span>,<span class="dt">b=</span><span class="dv">1</span>)</code></pre></div>
+<div class="figure">
+<img src="2015-10-20-Beta_pt1_files/figure-markdown/bunch_o_figs-1.png" alt />
 
-plot(best.model.int)
-plot(best.model.int$summary.linear.predictor$`0.5quant`,log10(ppmr.best$Prey.mass))
-abline(a=0,b=1)
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co"># pit histogram</span>
+<span class="kw">hist</span>(best.model.int$cpo$pit)</code></pre></div>
+<div class="figure">
+<img src="2015-10-20-Beta_pt1_files/figure-markdown/bunch_o_figs2-1.png" alt />
 
--mean(log(best.model.int$cpo$cpo))
-
-## [1] 0.4970614
-
-hist(best.model.int$cpo$pit)
-hist(best.model.int$cpo$cpo)</code></pre>
-<p id="section-2"></p>
-<h5 id="better-models">Better Models</h5>
-<p id="section-3"></p>
-<pre><code># 
-# better.model.int &lt;-  inla(log10(Prey.mass) ~ log10(Predator.mass)*Mean.annual.temp+
-#                       SD.annual.temp +
-#                       #f(log10(Pmass),model='rw2', diagonal=1e-5) + 
-#                       f(Predator,model='iid') + 
-#                       f(Geographic.location,model='iid')+
-#                       f(Type.of.feeding.interaction,model='iid')+
-#                       f(factor(Individual.ID),model='iid')+
-#                       f(Order,model='iid')+
-#                       f(Class,model='iid')+
-#                       f(habitat,model='iid')+
-#                       f(Family,model='iid')+
-#                       #f(Specific.habitat,model='iid')+
-#                       Depth +
-#                       #Latitude + 
-#                       Mean.PP,
-#                     data = ppmr.better,
-#                     control.compute = list(dic=TRUE,cpo=T),
-#                     control.predictor = list(compute=T)
-# )
-# 
-# summary(better.model.int)
-# #plot(better.model.int)
-# plot(better.model.int$summary.linear.predictor$`0.5quant`,log10(ppmr.better$Prey.mass))
-# abline(a=0,b=1)
-# 
-# -mean(log(better.model.int$cpo$cpo))
-# hist(better.model.int$cpo$pit)</code></pre>
+</div>
+<p>The pit histogram, as well as the low variace attributed to the higher taxonomic groupings in the INLA model make me suspicious that the formulation of independent random effects in this case estiamtes theiur contribution correctly or produces reasonable predictions at higher taxonomic levels. Indeed, the taxonomy is by nature nested, but it seems difficult to represent this explicitly in INLA (but perhaps I just didn't find the right way!). I'll try a more sophisticated approach for the next go at this...TBC</p>
+<h2 id="references">References</h2>
+<p><br></p>
 <div id="references" class="references">
-<h1 id="references" class="unnumbered">References</h1>
+<div id="ref-barnes:global:2010">
+<p>Barnes, C., D. Maxwell, D. C. Reuman, and S. Jennings. 2010. Global patterns in predator-prey size relationships reveal size dependency of trophic transfer efficiency. Ecology 91:222–232.</p>
+</div>
+<div id="ref-Boettiger:rfishbase:2012">
+<p>Boettiger, C., D. Temple Lang, and P. C. Wainwright. 2012. Rfishbase: R interface to fishBASE.</p>
+</div>
+<div id="ref-Chamberlain:taxize:2013">
+<p>Chamberlain, S., and E. Szocs. 2013. Taxize - taxonomic search and retrieval in r. F1000Research.</p>
+</div>
+<div id="ref-Chamberlain:taxize:2014">
+<p>Chamberlain, S., E. Szocs, C. Boettiger, K. Ram, I. Bartomeus, and J. Baumgartner. 2014. Taxize: Taxonomic information from around the web.</p>
+</div>
+<div id="ref-gibert:temperature:2014-1">
+<p>Gibert, J. P., and J. P. DeLong. 2014. Temperature alters food web body-size structure. Biology letters 10:20140473.</p>
+</div>
+<div id="ref-hartvig:food:2011">
+<p>Hartvig, M., K. H. Andersen, and J. E. Beyer. 2011. Food web framework for size-structured populations. Journal of Theoretical Biology 272:113–122.</p>
+</div>
+<div id="ref-jennings:use:2002">
+<p>Jennings, S., K. J. Warr, and S. Mackinson. 2002. Use of size-based production and stable isotope analyses to predict trophic transfer efficiencies and predator-prey body mass ratios in food webs. Marine Ecology Progress Series 240:11–20.</p>
+</div>
+<div id="ref-nakazawa:scale:2011">
+<p>Nakazawa, T., M. Ushio, and M. Kondoh. 2011. Scale dependence of predator–prey mass ratio: Determinants and applications. The Role of Body Size in Multispecies Systems 45:269.</p>
+</div>
+<div id="ref-Rue:INLA:2014">
+<p>Rue, H., S. Martino, F. Lindgren, D. Simpson, A. Riebler, and E. T. Krainski. 2014
++0100). INLA: Functions which allow to perform full bayesian analysis of latent gaussian models using integrated nested laplace approximaxion.</p>
+</div>
 </div>
 
             </div>

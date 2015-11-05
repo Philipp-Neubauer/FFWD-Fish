@@ -1,0 +1,519 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>FFWD fish blog</title>
+        <link rel="stylesheet" type="text/css" href="../css/style.css" />
+    </head>
+    <body>
+        <header class="navigation">
+            <div class="navigation-wrapper">
+                <a href="javascript:void(0)" class="logo">
+                    <img src="../images/logo_Sam.png" alt="Logo Image">
+                </a>
+                <a href="javascript:void(0)" class="navigation-menu-button" id="js-mobile-menu">MENU</a>
+                <div class="nav">
+                    <ul id="js-navigation-menu" class="navigation-menu show">
+                        <li class="nav-link"><a href="../index.html">Home</a></li>
+                        <li class="nav-link"><a href="../archive.html">Archive</a></li>
+                        <li class="nav-link"><a href="../about.html">About</a></li>
+                        <li class="nav-link"><a href="../contact.html">Contact</a></li>
+                    </ul>
+                </div>
+            </div>
+        </header>
+        <main>
+            
+            <div class="container">
+            <div class="info">
+    <br>
+    
+    Posted on May  5, 2015
+    
+        by "Philipp Neubauer"
+    
+</div>
+
+<p>History matching is a method for fitting complex computer simulation models to data, using likelihood free methods that are based on Bayesian theory of analysis of computer simulations <span class="citation">(Kennedy and O’Hagan 2001)</span>. For more information on history matching itself, see <span class="citation">Kennedy and O’Hagan (2001)</span> and in the context of ecological and epidemiological simulations, see <span class="citation">Andrianakis et al. (2015)</span>.</p>
+<p>The intriguing prospect of history matching is that is can be used with complex simulation models that would be difficult to fit to data using likelihood based methods. For example, MCMC for long-running simulations would likely involve running the full simulation at every iteration to get a likelihood. In history matching, the simulation runs are replaced by statistical emulators based on Gaussian Processes, which can make the model fitting orders of magnitude faster.</p>
+<p>This post represents a first try at using history matching for ecosystem models, and in the context of this project, for size-spectra. The history match is done using the community size-spectrum slope as data and figuring out which parameter combination most likely lead to the observed slope (here from a simulated truth)</p>
+<h1 id="history-matching-size-based-models">History matching size-based models</h1>
+<p>Starting with mizer to get a community model up and running, see if I can emulate it using Gaussian processes, then use history matching to discard parameter values that provide poor matches to data. I'll closely follow <span class="citation">(Andrianakis et al. 2015)</span> in this first try.</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">truth &lt;-<span class="st"> </span><span class="kw">set_community_model</span>(<span class="dt">max_w =</span> <span class="fl">1e+06</span>, <span class="dt">min_w =</span> <span class="fl">0.001</span>,<span class="dt">r_pp=</span><span class="dv">10</span>,
+                    <span class="dt">z0 =</span> <span class="fl">0.1</span>, <span class="dt">alpha =</span> <span class="fl">0.2</span>, <span class="dt">h =</span> <span class="dv">10</span>, <span class="dt">beta =</span> <span class="dv">100</span>, <span class="dt">sigma =</span> <span class="dv">2</span>,
+                    <span class="dt">q =</span> <span class="fl">0.8</span>, <span class="dt">n =</span> <span class="fl">0.8</span>, <span class="dt">kappa =</span> <span class="dv">10000</span>,
+                    <span class="dt">f0 =</span> <span class="fl">0.7</span>,  <span class="dt">gamma =</span> <span class="ot">NA</span>,
+                    <span class="dt">knife_edge_size =</span> <span class="dv">1000</span>)
+
+sim &lt;-<span class="st"> </span><span class="kw">project</span>(truth, <span class="dt">effort =</span> <span class="dv">0</span>, <span class="dt">t_max =</span> <span class="dv">20</span>, <span class="dt">dt=</span><span class="fl">0.1</span>)
+
+data &lt;-<span class="st"> </span><span class="kw">getCommunitySlope</span>(sim)[<span class="dv">20</span>,]</code></pre></div>
+<p>Arbitrarily, I chose n, q, h and <span class="math inline"><em>β</em></span> as the uncertain parameters. This is entirely arbitrary at this stage; I just want to figure out how this works...</p>
+<p>First, I need to define a hypercube to sample from and calibrate the Gaussian process that will (hopefully!) emulate the size spectrum outputs.</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co">#Set prior search space</span>
+cube=<span class="dv">6</span>
+dims=<span class="dv">4</span>
+
+n=<span class="kw">seq</span>(<span class="dv">2</span>/<span class="dv">3</span>,<span class="fl">0.9</span>,<span class="dt">l=</span>cube)
+q=<span class="kw">seq</span>(<span class="fl">0.4</span>,<span class="dv">1</span>,<span class="dt">l=</span>cube)
+h =<span class="st"> </span><span class="kw">seq</span>(<span class="dv">3</span>,<span class="dv">20</span>,<span class="dt">l=</span>cube)
+beta =<span class="st"> </span><span class="kw">seq</span>(<span class="dv">50</span>,<span class="dv">1000</span>,<span class="dt">l=</span>cube)
+
+<span class="co"># do this in parallel</span>
+sim_data &lt;-<span class="st"> </span><span class="kw">vector</span>(<span class="st">'list'</span>,cube^<span class="dv">4</span>)
+a=<span class="dv">0</span>
+<span class="co"># run hypercube</span>
+for(ns in n){
+  for (qs in q){
+    for (hs in h){
+      for (bs in beta){
+        a=a<span class="dv">+1</span>
+        sim_data[[a]] &lt;-<span class="st"> </span><span class="kw">c</span>(ns,qs,hs,bs)
+      }
+    }
+  }
+}
+
+simdat &lt;-<span class="st"> </span>parallel::<span class="kw">mclapply</span>(sim_data, function(x) {
+  truth &lt;-<span class="st"> </span><span class="kw">set_community_model</span>(<span class="dt">max_w =</span> <span class="fl">1e+06</span>, <span class="dt">min_w =</span> <span class="fl">0.001</span>,
+                                     <span class="dt">z0 =</span> <span class="fl">0.1</span>, <span class="dt">alpha =</span> <span class="fl">0.2</span>, <span class="dt">h =</span> x[<span class="dv">3</span>],
+                                     <span class="dt">beta =</span> x[<span class="dv">4</span>], <span class="dt">sigma =</span> <span class="dv">2</span>,
+                                     <span class="dt">q =</span> x[<span class="dv">2</span>], <span class="dt">n =</span> x[<span class="dv">1</span>], <span class="dt">kappa =</span> <span class="dv">10000</span>,
+                                     <span class="dt">f0 =</span> <span class="fl">0.7</span>, <span class="dt">r_pp =</span> <span class="dv">10</span>, <span class="dt">gamma =</span> <span class="ot">NA</span>,
+                                     <span class="dt">knife_edge_size =</span> <span class="dv">1000</span>)
+
+  sim &lt;-<span class="st"> </span><span class="kw">project</span>(truth, <span class="dt">effort =</span> <span class="dv">0</span>, <span class="dt">t_max =</span> <span class="dv">10</span>, <span class="dt">dt=</span><span class="fl">0.1</span>)
+  <span class="kw">as.matrix</span>(<span class="kw">getCommunitySlope</span>(sim)[<span class="dv">10</span>,])
+}, <span class="dt">mc.cores=</span><span class="dv">4</span>)
+
+simdat &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'rbind'</span>,simdat)</code></pre></div>
+<p>So far so good, with those simulation in our pocket, we can go to the emulation part:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">inputs &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'rbind'</span>,sim_data)
+outputs1 &lt;-<span class="st"> </span>simdat[,<span class="dv">1</span>]
+outputs2 &lt;-<span class="st"> </span>simdat[,<span class="dv">2</span>]</code></pre></div>
+<p>Following <span class="citation">Andrianakis et al. (2015)</span> - estimate the length scale from data. Simulated annealing seems to work best here as the surface in 4 dimensions is multimodal and other optim method choices get stuck in suboptimal modes. Wonder if there's better alternatives (besides MCMC or numerical integration, which seem to defeat the purpose.)</p>
+<p>Using <span class="citation">Vernon et al. (2010)</span>, set the initial guess at a conservative 0.125 times the range of the inputs given the cubic regressor.</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">meanfunk &lt;-<span class="st"> </span>function(x){
+  out &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="dv">1</span>,x,x^<span class="dv">2</span>,x^<span class="dv">3</span>)
+  <span class="kw">names</span>(out) &lt;-<span class="st"> </span>letters[<span class="dv">1</span>:<span class="kw">length</span>(x)]
+  <span class="kw">return</span>(out)
+}
+
+<span class="co"># scale inputs to lie in [-1,1], makes things more numerically stable</span>
+
+ipmax &lt;-<span class="st"> </span><span class="kw">apply</span>(inputs,<span class="dv">2</span>,max)
+ipmean &lt;-<span class="st"> </span><span class="kw">colMeans</span>(inputs)
+
+scale &lt;-<span class="st"> </span>function(x,ipmean,ipmax) (x-ipmean)/(ipmax-ipmean)
+rescale &lt;-<span class="st"> </span>function(x,ipmean,ipmax) x*(ipmax-ipmean)+ipmean
+
+input &lt;-<span class="st"> </span><span class="kw">t</span>(<span class="kw">apply</span>(inputs, <span class="dv">1</span>, scale, ipmean, ipmax))
+
+scale_start &lt;-<span class="st"> </span><span class="dv">1</span>/(<span class="fl">0.125</span>*<span class="kw">as.vector</span>(<span class="kw">diff</span>(<span class="kw">apply</span>(input,<span class="dv">2</span>,range))))^<span class="dv">2</span>
+
+pars_w1_o1 &lt;-<span class="st"> </span><span class="kw">optimal.scales</span>(<span class="dt">val=</span>input,scale_start,<span class="dt">func=</span>meanfunk, <span class="kw">as.matrix</span>(outputs1),<span class="dt">method=</span><span class="st">&quot;SANN&quot;</span>,<span class="dt">control=</span><span class="kw">list</span>(<span class="dt">trace=</span><span class="ot">TRUE</span>,<span class="dt">REPORT=</span><span class="dv">10</span>,<span class="dt">maxit =</span> <span class="dv">200</span>,<span class="dt">reltol=</span><span class="fl">0.001</span>))</code></pre></div>
+<pre><code>## sann objective function values
+## initial       value -2175.760416
+## iter      100 value -2759.539373
+## iter      199 value -2768.112450
+## final         value -2768.112450
+## sann stopped after 199 iterations</code></pre>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">pars_w1_o2 &lt;-<span class="st"> </span><span class="kw">optimal.scales</span>(<span class="dt">val=</span>input,scale_start,<span class="dt">func=</span>meanfunk, <span class="kw">as.matrix</span>(outputs2),<span class="dt">method=</span><span class="st">&quot;SANN&quot;</span>,<span class="dt">control=</span><span class="kw">list</span>(<span class="dt">trace=</span><span class="ot">TRUE</span>,<span class="dt">REPORT=</span><span class="dv">10</span>,<span class="dt">maxit =</span> <span class="dv">200</span>,<span class="dt">reltol=</span><span class="fl">0.001</span>))</code></pre></div>
+<pre><code>## sann objective function values
+## initial       value 322.631519
+## iter      100 value -238.491252
+## iter      199 value -241.687325
+## final         value -241.687325
+## sann stopped after 199 iterations</code></pre>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">A_w1_o1 =<span class="st"> </span><span class="kw">corr.matrix</span>(input,<span class="dt">scales=</span>pars_w1_o1);
+Ainv_w1_o1 &lt;-<span class="st"> </span><span class="kw">solve</span>(A_w1_o1)
+
+A_w1_o2 =<span class="st"> </span><span class="kw">corr.matrix</span>(input,<span class="dt">scales=</span>pars_w1_o2);
+Ainv_w1_o2 &lt;-<span class="st"> </span><span class="kw">solve</span>(A_w1_o2)</code></pre></div>
+<h1 id="wave-1">Wave 1</h1>
+<p>Next, need to predict to a whole lot of points and calculate implausibility. Using the emulator package for this:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">cube_pred &lt;-<span class="st"> </span><span class="dv">10</span>
+
+preds &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">n=</span><span class="kw">seq</span>(<span class="dv">2</span>/<span class="dv">3</span>,<span class="fl">0.9</span>,<span class="dt">l=</span>cube_pred),
+           <span class="dt">q=</span><span class="kw">seq</span>(<span class="fl">0.2</span>,<span class="dv">1</span>,<span class="dt">l=</span>cube_pred),
+           <span class="dt">h =</span> <span class="kw">seq</span>(<span class="dv">3</span>,<span class="dv">20</span>,<span class="dt">l=</span>cube_pred),
+           <span class="dt">beta =</span> <span class="kw">seq</span>(<span class="dv">50</span>,<span class="dv">1000</span>,<span class="dt">l=</span>cube_pred))
+
+predicts &lt;-<span class="st"> </span><span class="kw">vector</span>(<span class="st">'list'</span>,cube_pred^<span class="dv">4</span>)
+a=<span class="dv">0</span>
+for(ns in preds$n){
+  for (qs in preds$q){
+    for (hs in preds$h){
+      for (bs in preds$beta){
+        a=a<span class="dv">+1</span>
+        predicts[[a]] &lt;-<span class="st"> </span><span class="kw">scale</span>(<span class="kw">c</span>(ns,qs,hs,bs),ipmean,ipmax)
+      }
+    }
+  }
+}
+   
+predmu_w1_o1 &lt;-<span class="st"> </span>parallel::<span class="kw">mclapply</span>(predicts,interpolant, outputs1, <span class="kw">as.matrix</span>(input),<span class="dt">A=</span>A_w1_o1,<span class="dt">Ainv=</span>Ainv_w1_o1,<span class="dt">scales=</span>pars_w1_o1,<span class="dt">func=</span>meanfunk,<span class="dt">g=</span><span class="ot">TRUE</span>,<span class="dt">mc.cores=</span><span class="dv">4</span>)
+predmu_w1_o2 &lt;-<span class="st"> </span>parallel::<span class="kw">mclapply</span>(predicts,interpolant, outputs2, <span class="kw">as.matrix</span>(input),<span class="dt">A=</span>A_w1_o1,<span class="dt">Ainv=</span>Ainv_w1_o1,<span class="dt">scales=</span>pars_w1_o2,<span class="dt">func=</span>meanfunk,<span class="dt">g=</span><span class="ot">TRUE</span>,<span class="dt">mc.cores=</span><span class="dv">4</span>)
+
+predvar_w1_o1 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w1_o1,function(x) x$Z))
+pred_w1_o1 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w1_o1,function(x) x$mstar.star))
+
+predvar_w1_o2 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w1_o2,function(x) x$Z))
+pred_w1_o2 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w1_o2,function(x) x$mstar.star))
+      
+pn &lt;-<span class="st"> </span><span class="kw">cbind</span>(pred_w1_o1,pred_w1_o2)
+mse &lt;-<span class="st"> </span><span class="kw">cbind</span>(predvar_w1_o1,predvar_w1_o2)^<span class="dv">2</span>
+modelvar &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="fl">0.1</span>*<span class="kw">var</span>(outputs1),<span class="fl">0.1</span>*<span class="kw">var</span>(outputs2))
+
+predictn &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="kw">do.call</span>(<span class="st">'rbind'</span>,<span class="kw">lapply</span>(predicts,rescale,ipmean,ipmax)))
+
+predictn$impl &lt;-<span class="st"> </span><span class="kw">sapply</span>(<span class="dv">1</span>:<span class="kw">nrow</span>(pn),function(x){ 
+  imp &lt;-<span class="st"> </span><span class="kw">as.matrix</span>(data[,<span class="kw">c</span>(<span class="st">'slope'</span>,<span class="st">'intercept'</span>)] -<span class="st"> </span>pn[x,]) %*%<span class="st"> </span><span class="kw">solve</span>(<span class="kw">diag</span>(mse[x,]+modelvar)) %*%<span class="st"> </span><span class="kw">t</span>(<span class="kw">as.matrix</span>(data[,<span class="kw">c</span>(<span class="st">'slope'</span>,<span class="st">'intercept'</span>)] -<span class="st"> </span>pn[x,]))
+  <span class="kw">return</span>(imp)
+})
+
+<span class="kw">colnames</span>(predictn) &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="st">'n'</span>,<span class="st">'q'</span>,<span class="st">'h'</span>,<span class="st">'beta'</span>,<span class="st">'Implausibility'</span>)
+
+<span class="kw">ggplot</span>(predictn,<span class="kw">aes</span>(<span class="dt">x=</span>n,<span class="dt">y=</span>q,<span class="dt">z=</span>Implausibility)) +<span class="st"> </span><span class="kw">stat_summary2d</span>(<span class="dt">fun =</span> function(x) <span class="kw">mean</span>(x&gt;<span class="dv">3</span>))</code></pre></div>
+<div class="figure">
+<img src="2015-05-05-emulation_using_GPs_files/figure-markdown/unnamed-chunk-6-1.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">ggplot</span>(predictn,<span class="kw">aes</span>(<span class="dt">x=</span>n,<span class="dt">y=</span>beta,<span class="dt">z=</span>Implausibility)) +<span class="st"> </span><span class="kw">stat_summary2d</span>(<span class="dt">fun =</span> function(x) <span class="kw">mean</span>(x&gt;<span class="dv">3</span>))</code></pre></div>
+<div class="figure">
+<img src="2015-05-05-emulation_using_GPs_files/figure-markdown/unnamed-chunk-6-2.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">ggplot</span>(predictn,<span class="kw">aes</span>(<span class="dt">x=</span>h,<span class="dt">y=</span>beta,<span class="dt">z=</span>Implausibility)) +<span class="st"> </span><span class="kw">stat_summary2d</span>(<span class="dt">fun =</span> function(x) <span class="kw">mean</span>(x&gt;<span class="dv">3</span>))</code></pre></div>
+<div class="figure">
+<img src="2015-05-05-emulation_using_GPs_files/figure-markdown/unnamed-chunk-6-3.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">keepers &lt;-<span class="st"> </span>predictn %&gt;%<span class="st"> </span><span class="kw">filter</span>(Implausibility&lt;<span class="dv">3</span>) %&gt;%<span class="st"> </span><span class="kw">select</span>(-Implausibility)</code></pre></div>
+<p>In this wave, 8% of points of the hypercube remain undiscarted.</p>
+<p>Now draw from MYN distribution around keepers (or subset thereof), choose variance to have ~ 20% rejected. Those are the starting points for the next wave of history matching.</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">repmat =<span class="st"> </span>function(X,m,n){
+##R equivalent of repmat (matlab)
+  X&lt;-<span class="st"> </span><span class="kw">as.matrix</span>(X)
+  mx =<span class="st"> </span><span class="kw">dim</span>(X)[<span class="dv">1</span>]
+  nx =<span class="st"> </span><span class="kw">dim</span>(X)[<span class="dv">2</span>]
+  <span class="kw">matrix</span>(<span class="kw">t</span>(<span class="kw">matrix</span>(X,mx,nx*n)),mx*m,nx*n,<span class="dt">byrow=</span>T)
+}
+
+<span class="co">#draw 12000 points total</span>
+oc &lt;-<span class="st"> </span><span class="kw">round</span>(<span class="dv">15000</span>/<span class="kw">nrow</span>(keepers))
+
+keepers_sc &lt;-<span class="st"> </span><span class="kw">t</span>(<span class="kw">apply</span>(keepers,<span class="dv">1</span>,scale,ipmean,ipmax))
+isd &lt;-<span class="st"> </span><span class="kw">apply</span>(keepers_sc,<span class="dv">2</span>,sd)
+new_points_sim &lt;-<span class="st"> </span><span class="kw">t</span>(<span class="kw">apply</span>(<span class="kw">repmat</span>(keepers_sc,oc,<span class="dv">1</span>),<span class="dv">1</span>,function(x) <span class="kw">t</span>(mvtnorm::<span class="kw">rmvnorm</span>(<span class="dv">1</span>,x,<span class="kw">diag</span>(<span class="kw">rep</span>(<span class="fl">0.01</span>*isd))))))
+
+d=<span class="kw">ncol</span>(keepers)
+apply.range &lt;-<span class="st"> </span><span class="kw">apply</span>(<span class="kw">sapply</span>(<span class="dv">1</span>:d,function(x) new_points_sim[,x]&gt;=-<span class="dv">1</span> &amp;<span class="st"> </span>new_points_sim[,x]&lt;=<span class="dv">1</span>),<span class="dv">1</span>,all)
+
+new_points_sim &lt;-<span class="st"> </span>new_points_sim[apply.range,]
+<span class="kw">dim</span>(new_points_sim)</code></pre></div>
+<pre><code>## [1] 8302    4</code></pre>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">ss &lt;-<span class="st"> </span><span class="kw">sample</span>(<span class="dv">1</span>:<span class="kw">nrow</span>(new_points_sim),<span class="dv">1000</span>,<span class="dt">replace =</span> F)
+new_points_sim_sub &lt;-<span class="st"> </span>new_points_sim[ss,]
+
+new_points_sim_sub_list &lt;-<span class="st"> </span><span class="kw">split</span>(new_points_sim_sub,<span class="dv">1</span>:<span class="kw">nrow</span>(new_points_sim_sub))
+
+<span class="co">#test output1</span>
+predmu_w1test_o1 &lt;-<span class="st"> </span>parallel::<span class="kw">mclapply</span>(new_points_sim_sub_list,interpolant, outputs1, <span class="kw">as.matrix</span>(input),<span class="dt">A=</span>A_w1_o1,<span class="dt">Ainv=</span>Ainv_w1_o1,<span class="dt">scales=</span>pars_w1_o1,<span class="dt">func=</span>meanfunk,<span class="dt">g=</span><span class="ot">TRUE</span>,<span class="dt">mc.cores=</span><span class="dv">4</span>)
+<span class="co">#test output2</span>
+predmu_w1test_o2 &lt;-<span class="st"> </span>parallel::<span class="kw">mclapply</span>(new_points_sim_sub_list,interpolant, outputs2, <span class="kw">as.matrix</span>(input),<span class="dt">A=</span>A_w1_o2,<span class="dt">Ainv=</span>Ainv_w1_o2,<span class="dt">scales=</span>pars_w1_o2,<span class="dt">func=</span>meanfunk,<span class="dt">g=</span><span class="ot">TRUE</span>,<span class="dt">mc.cores=</span><span class="dv">4</span>)
+
+predvar_w1test_o1 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w1test_o1,function(x) x$Z))
+pred_w1test_o1 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w1test_o1,function(x) x$mstar.star))
+
+predvar_w1test_o2 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w1test_o2,function(x) x$Z))
+pred_w1test_o2 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w1test_o2,function(x) x$mstar.star))
+        
+pn &lt;-<span class="st"> </span><span class="kw">cbind</span>(pred_w1test_o1,pred_w1test_o2)
+mse &lt;-<span class="st"> </span><span class="kw">cbind</span>(predvar_w1test_o1,predvar_w1test_o2)^<span class="dv">2</span>
+modelvar &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="fl">0.1</span>*<span class="kw">var</span>(outputs1),<span class="fl">0.1</span>*<span class="kw">var</span>(outputs2))
+
+test_impl &lt;-<span class="st"> </span><span class="kw">sapply</span>(<span class="dv">1</span>:<span class="kw">nrow</span>(pn),function(x){ 
+  imp &lt;-<span class="st"> </span><span class="kw">as.matrix</span>(data[,<span class="kw">c</span>(<span class="st">'slope'</span>,<span class="st">'intercept'</span>)] -<span class="st"> </span>pn[x,]) %*%<span class="st"> </span><span class="kw">solve</span>(<span class="kw">diag</span>(mse[x,]+modelvar)) %*%<span class="st"> </span><span class="kw">t</span>(<span class="kw">as.matrix</span>(data[,<span class="kw">c</span>(<span class="st">'slope'</span>,<span class="st">'intercept'</span>)] -<span class="st"> </span>pn[x,]))
+  <span class="kw">return</span>(imp)
+})
+
+
+<span class="kw">mean</span>(test_impl&gt;<span class="dv">3</span>)</code></pre></div>
+<pre><code>## [1] 0.211</code></pre>
+<p>About 21 percent rejected at this try. Now re-run simulator and GP emulation &amp; history matching for the next wave...</p>
+<h2 id="wave-2">Wave 2</h2>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">sim_in_w2 &lt;-<span class="st"> </span><span class="kw">t</span>(<span class="kw">apply</span>(new_points_sim_sub, <span class="dv">1</span>, rescale, ipmean, ipmax))
+sim_in_w2_list &lt;-<span class="st"> </span><span class="kw">split</span>(sim_in_w2,<span class="dv">1</span>:<span class="kw">nrow</span>(sim_in_w2))
+
+sim_data_w2 &lt;-<span class="st"> </span><span class="kw">mclapply</span>(sim_in_w2_list,function(x){
+  truth &lt;-<span class="st"> </span><span class="kw">set_community_model</span>(<span class="dt">max_w =</span> <span class="fl">1e+06</span>, <span class="dt">min_w =</span> <span class="fl">0.001</span>,
+                               <span class="dt">z0 =</span> <span class="fl">0.1</span>, <span class="dt">alpha =</span> <span class="fl">0.2</span>, <span class="dt">h =</span> x[<span class="dv">3</span>],
+                               <span class="dt">beta =</span> x[<span class="dv">4</span>], <span class="dt">sigma =</span> <span class="dv">2</span>,
+                               <span class="dt">q =</span> x[<span class="dv">2</span>], <span class="dt">n =</span> x[<span class="dv">1</span>], <span class="dt">kappa =</span> <span class="dv">10000</span>,
+                               <span class="dt">f0 =</span> <span class="fl">0.7</span>, <span class="dt">r_pp =</span> <span class="dv">10</span>, <span class="dt">gamma =</span> <span class="ot">NA</span>,
+                               <span class="dt">knife_edge_size =</span> <span class="dv">1000</span>)
+  
+  sim &lt;-<span class="st"> </span><span class="kw">project</span>(truth, <span class="dt">effort =</span> <span class="dv">0</span>, <span class="dt">t_max =</span> <span class="dv">10</span>, <span class="dt">dt=</span><span class="fl">0.1</span>)
+  sims &lt;-<span class="st"> </span><span class="kw">as.matrix</span>(<span class="kw">getCommunitySlope</span>(sim)[<span class="dv">10</span>,])
+  <span class="kw">return</span>(sims)
+},<span class="dt">mc.cores=</span><span class="dv">4</span>)
+
+w2_data &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'rbind'</span>,sim_data_w2)
+outputs1_w2 &lt;-<span class="st"> </span>w2_data[,<span class="dv">1</span>]
+outputs2_w2 &lt;-<span class="st"> </span>w2_data[,<span class="dv">2</span>]  
+
+
+pars_w2_o1 &lt;-<span class="st"> </span><span class="kw">optimal.scales</span>(<span class="dt">val=</span>new_points_sim_sub, pars_w1_o1,<span class="dt">func=</span>meanfunk, <span class="kw">as.matrix</span>(outputs1_w2),<span class="dt">method=</span><span class="st">&quot;SANN&quot;</span>,<span class="dt">control=</span><span class="kw">list</span>(<span class="dt">trace=</span><span class="ot">TRUE</span>,<span class="dt">REPORT=</span><span class="dv">10</span>,<span class="dt">maxit =</span> <span class="dv">200</span>,<span class="dt">reltol=</span><span class="fl">0.001</span>))</code></pre></div>
+<pre><code>## sann objective function values
+## initial       value -1218.120614
+## iter      100 value -2205.707784
+## iter      199 value -2205.707784
+## final         value -2205.707784
+## sann stopped after 199 iterations</code></pre>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">pars_w2_o2 &lt;-<span class="st"> </span><span class="kw">optimal.scales</span>(<span class="dt">val=</span>new_points_sim_sub, pars_w1_o2,<span class="dt">func=</span>meanfunk, <span class="kw">as.matrix</span>(outputs2_w2),<span class="dt">method=</span><span class="st">&quot;SANN&quot;</span>,<span class="dt">control=</span><span class="kw">list</span>(<span class="dt">trace=</span><span class="ot">TRUE</span>,<span class="dt">REPORT=</span><span class="dv">10</span>,<span class="dt">maxit =</span> <span class="dv">200</span>,<span class="dt">reltol=</span><span class="fl">0.001</span>))</code></pre></div>
+<pre><code>## sann objective function values
+## initial       value 918.677263
+## iter      100 value -247.200427
+## iter      199 value -247.200427
+## final         value -247.200427
+## sann stopped after 199 iterations</code></pre>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">A_w2_o1 =<span class="st"> </span><span class="kw">corr.matrix</span>(new_points_sim_sub,<span class="dt">scales=</span>pars_w2_o1);
+Ainv_w2_o1 &lt;-<span class="st"> </span><span class="kw">solve</span>(A_w2_o1)
+
+A_w2_o2 =<span class="st"> </span><span class="kw">corr.matrix</span>(new_points_sim_sub,<span class="dt">scales=</span>pars_w2_o2);
+Ainv_w2_o2 &lt;-<span class="st"> </span><span class="kw">solve</span>(A_w2_o2)</code></pre></div>
+<p>I can now use the <code>new_points_sim</code> object from above to use reasonable values to do predictions</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">new_points_sim_list &lt;-<span class="st"> </span><span class="kw">split</span>(new_points_sim[-ss,],<span class="dv">1</span>:<span class="kw">nrow</span>(new_points_sim[-ss,]))
+
+predmu_w2_o1 &lt;-<span class="st"> </span>parallel::<span class="kw">mclapply</span>(new_points_sim_list,interpolant,outputs1_w2, new_points_sim_sub,<span class="dt">A=</span>A_w2_o1,<span class="dt">Ainv=</span>Ainv_w2_o1,<span class="dt">scales=</span>pars_w2_o1,<span class="dt">func=</span>meanfunk,<span class="dt">g=</span><span class="ot">TRUE</span>,<span class="dt">mc.cores=</span><span class="dv">4</span>)
+predmu_w2_o2 &lt;-<span class="st"> </span>parallel::<span class="kw">mclapply</span>(new_points_sim_list,interpolant,outputs2_w2, new_points_sim_sub,<span class="dt">A=</span>A_w2_o1,<span class="dt">Ainv=</span>Ainv_w2_o1,<span class="dt">scales=</span>pars_w2_o2,<span class="dt">func=</span>meanfunk,<span class="dt">g=</span><span class="ot">TRUE</span>,<span class="dt">mc.cores=</span><span class="dv">4</span>)
+
+predvar_w2_o1 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w2_o1,function(x) x$Z))
+pred_w2_o1 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w2_o1,function(x) x$mstar.star))
+
+predvar_w2_o2 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w2_o2,function(x) x$Z))
+pred_w2_o2 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w2_o2,function(x) x$mstar.star))
+        
+pn &lt;-<span class="st"> </span><span class="kw">cbind</span>(pred_w2_o1,pred_w2_o2)
+mse &lt;-<span class="st"> </span><span class="kw">cbind</span>(predvar_w2_o1,predvar_w2_o2)^<span class="dv">2</span>
+modelvar &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="fl">0.1</span>*<span class="kw">var</span>(outputs1_w2),<span class="fl">0.1</span>*<span class="kw">var</span>(outputs2_w2))
+
+predictn &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="kw">do.call</span>(<span class="st">'rbind'</span>,<span class="kw">lapply</span>(new_points_sim_list,rescale,ipmean,ipmax)))
+
+predictn$impl &lt;-<span class="st"> </span><span class="kw">sapply</span>(<span class="dv">1</span>:<span class="kw">nrow</span>(pn),function(x){ 
+  imp &lt;-<span class="st"> </span><span class="kw">as.matrix</span>(data[,<span class="kw">c</span>(<span class="st">'slope'</span>,<span class="st">'intercept'</span>)] -<span class="st"> </span>pn[x,]) %*%<span class="st"> </span><span class="kw">solve</span>(<span class="kw">diag</span>(mse[x,]+modelvar)) %*%<span class="st"> </span><span class="kw">t</span>(<span class="kw">as.matrix</span>(data[,<span class="kw">c</span>(<span class="st">'slope'</span>,<span class="st">'intercept'</span>)] -<span class="st"> </span>pn[x,]))
+  <span class="kw">return</span>(imp)
+})
+
+<span class="kw">colnames</span>(predictn) &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="st">'n'</span>,<span class="st">'q'</span>,<span class="st">'h'</span>,<span class="st">'beta'</span>,<span class="st">'Implausibility'</span>)
+
+<span class="kw">require</span>(ggplot2)
+
+<span class="kw">ggplot</span>(predictn,<span class="kw">aes</span>(<span class="dt">x=</span>n,<span class="dt">y=</span>q,<span class="dt">z=</span>Implausibility)) +<span class="st"> </span><span class="kw">stat_summary2d</span>(<span class="dt">fun =</span> function(x) <span class="kw">mean</span>(x&gt;<span class="dv">3</span>))</code></pre></div>
+<div class="figure">
+<img src="2015-05-05-emulation_using_GPs_files/figure-markdown/unnamed-chunk-9-1.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">ggplot</span>(predictn,<span class="kw">aes</span>(<span class="dt">x=</span>n,<span class="dt">y=</span>beta,<span class="dt">z=</span>Implausibility)) +<span class="st"> </span><span class="kw">stat_summary2d</span>(<span class="dt">fun =</span> function(x) <span class="kw">mean</span>(x&gt;<span class="dv">3</span>))</code></pre></div>
+<div class="figure">
+<img src="2015-05-05-emulation_using_GPs_files/figure-markdown/unnamed-chunk-9-2.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">hist</span>(keepers$n)</code></pre></div>
+<div class="figure">
+<img src="2015-05-05-emulation_using_GPs_files/figure-markdown/unnamed-chunk-9-3.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">hist</span>(keepers$q)</code></pre></div>
+<div class="figure">
+<img src="2015-05-05-emulation_using_GPs_files/figure-markdown/unnamed-chunk-9-4.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">hist</span>(keepers$beta)</code></pre></div>
+<div class="figure">
+<img src="2015-05-05-emulation_using_GPs_files/figure-markdown/unnamed-chunk-9-5.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">keepers_w2 &lt;-<span class="st"> </span>predictn %&gt;%<span class="st"> </span><span class="kw">filter</span>(Implausibility&lt;<span class="dv">3</span>) %&gt;%<span class="st"> </span><span class="kw">select</span>(-Implausibility)</code></pre></div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">oc &lt;-<span class="st"> </span><span class="kw">round</span>(<span class="dv">15000</span>/<span class="kw">nrow</span>(keepers_w2))
+keepers_sc &lt;-<span class="st"> </span><span class="kw">t</span>(<span class="kw">apply</span>(keepers_w2,<span class="dv">1</span>,scale,ipmean,ipmax))
+isd &lt;-<span class="st"> </span><span class="kw">apply</span>(keepers_sc,<span class="dv">2</span>,sd)
+new_points_sim_w2 &lt;-<span class="st"> </span><span class="kw">t</span>(<span class="kw">apply</span>(<span class="kw">repmat</span>(keepers_sc,oc,<span class="dv">1</span>),<span class="dv">1</span>,function(x) <span class="kw">t</span>(mvtnorm::<span class="kw">rmvnorm</span>(<span class="dv">1</span>,x,<span class="kw">diag</span>(<span class="kw">rep</span>(<span class="fl">0.01</span>*isd))))))
+
+apply.range &lt;-<span class="st"> </span><span class="kw">apply</span>(<span class="kw">sapply</span>(<span class="dv">1</span>:d,function(x) new_points_sim_w2[,x]&gt;-<span class="dv">1</span> &amp;<span class="st"> </span>new_points_sim_w2[,x]&lt;<span class="dv">1</span>),<span class="dv">1</span>,all)
+
+new_points_sim_w2 &lt;-<span class="st"> </span>new_points_sim_w2[apply.range,]
+
+ss &lt;-<span class="st"> </span><span class="kw">sample</span>(<span class="dv">1</span>:<span class="kw">nrow</span>(new_points_sim_w2),<span class="dv">1000</span>,<span class="dt">replace =</span> F)
+new_points_sim_sub_w2 &lt;-<span class="st"> </span>new_points_sim_w2[ss,]
+
+new_points_sim_sub_list_w2 &lt;-<span class="st"> </span><span class="kw">split</span>(new_points_sim_sub_w2 ,<span class="dv">1</span>:<span class="kw">nrow</span>(new_points_sim_sub_w2 ))
+
+predmu_w2test_o1 &lt;-<span class="st"> </span>parallel::<span class="kw">mclapply</span>(new_points_sim_sub_list_w2,interpolant, outputs1_w2, new_points_sim_sub,<span class="dt">A=</span>A_w2_o1,<span class="dt">Ainv=</span>Ainv_w2_o1,<span class="dt">scales=</span>pars_w2_o1,<span class="dt">g=</span><span class="ot">TRUE</span>,<span class="dt">mc.cores=</span><span class="dv">4</span>)
+predmu_w2test_o2 &lt;-<span class="st"> </span>parallel::<span class="kw">mclapply</span>(new_points_sim_sub_list_w2,interpolant, outputs2_w2, new_points_sim_sub,<span class="dt">A=</span>A_w2_o2,<span class="dt">Ainv=</span>Ainv_w2_o2,<span class="dt">scales=</span>pars_w2_o2,<span class="dt">g=</span><span class="ot">TRUE</span>,<span class="dt">mc.cores=</span><span class="dv">4</span>)
+
+predvar_w2test_o1 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w2test_o1,function(x) x$Z))
+pred_w2test_o1 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w2test_o1,function(x) x$mstar.star))
+
+predvar_w2test_o2 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w2test_o2,function(x) x$Z))
+pred_w2test_o2 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w2test_o2,function(x) x$mstar.star))
+        
+pn &lt;-<span class="st"> </span><span class="kw">cbind</span>(pred_w2test_o1,pred_w2test_o2)
+mse &lt;-<span class="st"> </span><span class="kw">cbind</span>(predvar_w2test_o1,predvar_w2test_o2)^<span class="dv">2</span>
+modelvar &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="fl">0.1</span>*<span class="kw">var</span>(outputs1),<span class="fl">0.1</span>*<span class="kw">var</span>(outputs2))
+
+test_impl &lt;-<span class="st"> </span><span class="kw">sapply</span>(<span class="dv">1</span>:<span class="kw">nrow</span>(pn),function(x){ 
+  imp &lt;-<span class="st"> </span><span class="kw">as.matrix</span>(data[,<span class="kw">c</span>(<span class="st">'slope'</span>,<span class="st">'intercept'</span>)] -<span class="st"> </span>pn[x,]) %*%<span class="st"> </span><span class="kw">solve</span>(<span class="kw">diag</span>(mse[x,]+modelvar)) %*%<span class="st"> </span><span class="kw">t</span>(<span class="kw">as.matrix</span>(data[,<span class="kw">c</span>(<span class="st">'slope'</span>,<span class="st">'intercept'</span>)] -<span class="st"> </span>pn[x,]))
+  <span class="kw">return</span>(imp)
+})
+
+<span class="kw">mean</span>(test_impl&gt;<span class="dv">3</span>)</code></pre></div>
+<pre><code>## [1] 0.068</code></pre>
+<p>This looks good, about 7 percent rejected at this try. Again, re-run simulator and GP for the next wave...</p>
+<h2 id="wave-3">Wave 3</h2>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">sim_in_w3 &lt;-<span class="st"> </span><span class="kw">t</span>(<span class="kw">apply</span>(new_points_sim_sub_w2, <span class="dv">1</span>, rescale, ipmean, ipmax))
+sim_in_w3_list &lt;-<span class="st"> </span><span class="kw">split</span>(sim_in_w3,<span class="dv">1</span>:<span class="kw">nrow</span>(sim_in_w3))
+new_points_sim_sub_w3 &lt;-<span class="st"> </span>new_points_sim_sub_w2
+
+sim_data_w3 &lt;-<span class="st"> </span><span class="kw">mclapply</span>(sim_in_w3_list,function(x){
+  truth &lt;-<span class="st"> </span><span class="kw">set_community_model</span>(<span class="dt">max_w =</span> <span class="fl">1e+06</span>, <span class="dt">min_w =</span> <span class="fl">0.001</span>,
+                               <span class="dt">z0 =</span> <span class="fl">0.1</span>, <span class="dt">alpha =</span> <span class="fl">0.2</span>, <span class="dt">h =</span> x[<span class="dv">3</span>],
+                               <span class="dt">beta =</span> x[<span class="dv">4</span>], <span class="dt">sigma =</span> <span class="dv">2</span>,
+                               <span class="dt">q =</span> x[<span class="dv">2</span>], <span class="dt">n =</span> x[<span class="dv">1</span>], <span class="dt">kappa =</span> <span class="dv">10000</span>,
+                               <span class="dt">f0 =</span> <span class="fl">0.7</span>, <span class="dt">r_pp =</span> <span class="dv">10</span>, <span class="dt">gamma =</span> <span class="ot">NA</span>,
+                               <span class="dt">knife_edge_size =</span> <span class="dv">1000</span>)
+  
+  sim &lt;-<span class="st"> </span><span class="kw">project</span>(truth, <span class="dt">effort =</span> <span class="dv">0</span>, <span class="dt">t_max =</span> <span class="dv">10</span>, <span class="dt">dt=</span><span class="fl">0.1</span>)
+  sims &lt;-<span class="st"> </span><span class="kw">as.matrix</span>(<span class="kw">getCommunitySlope</span>(sim)[<span class="dv">10</span>,])
+  <span class="kw">return</span>(sims)
+}, <span class="dt">mc.cores =</span> <span class="dv">4</span>)
+
+w3_data &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'rbind'</span>,sim_data_w3)
+outputs1_w3 &lt;-<span class="st"> </span>w3_data[,<span class="dv">1</span>]
+outputs2_w3 &lt;-<span class="st"> </span>w3_data[,<span class="dv">2</span>]  
+
+
+pars_w3_o1 &lt;-<span class="st"> </span><span class="kw">optimal.scales</span>(<span class="dt">val=</span>new_points_sim_sub_w3, pars_w2_o1,<span class="dt">func =</span> meanfunk, <span class="kw">as.matrix</span>(outputs1_w3),<span class="dt">method=</span><span class="st">&quot;SANN&quot;</span>,<span class="dt">control=</span><span class="kw">list</span>(<span class="dt">trace=</span><span class="ot">TRUE</span>,<span class="dt">REPORT=</span><span class="dv">10</span>,<span class="dt">maxit =</span> <span class="dv">200</span>,<span class="dt">reltol=</span><span class="fl">0.001</span>))</code></pre></div>
+<pre><code>## sann objective function values
+## initial       value -2387.226678
+## iter      100 value -2508.817026
+## iter      199 value -2509.972328
+## final         value -2509.972328
+## sann stopped after 199 iterations</code></pre>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">pars_w3_o2 &lt;-<span class="st"> </span><span class="kw">optimal.scales</span>(<span class="dt">val=</span>new_points_sim_sub_w3, pars_w2_o2,<span class="dt">func =</span> meanfunk, <span class="kw">as.matrix</span>(outputs2_w3),<span class="dt">method=</span><span class="st">&quot;SANN&quot;</span>,<span class="dt">control=</span><span class="kw">list</span>(<span class="dt">trace=</span><span class="ot">TRUE</span>,<span class="dt">REPORT=</span><span class="dv">10</span>,<span class="dt">maxit =</span> <span class="dv">200</span>,<span class="dt">reltol=</span><span class="fl">0.001</span>))</code></pre></div>
+<pre><code>## sann objective function values
+## initial       value -472.383982
+## iter      100 value -500.889419
+## iter      199 value -502.824945
+## final         value -502.824945
+## sann stopped after 199 iterations</code></pre>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">A_w3_o1 =<span class="st"> </span><span class="kw">corr.matrix</span>(new_points_sim_sub_w3,<span class="dt">scales=</span>pars_w3_o1);
+Ainv_w3_o1 &lt;-<span class="st"> </span><span class="kw">solve</span>(A_w3_o1)
+
+A_w3_o2 =<span class="st"> </span><span class="kw">corr.matrix</span>(new_points_sim_sub_w3,<span class="dt">scales=</span>pars_w3_o2);
+Ainv_w3_o2 &lt;-<span class="st"> </span><span class="kw">solve</span>(A_w3_o2)</code></pre></div>
+<p>Again, use the <code>new_points_sim</code> object from above to use reasonable values to do predictions</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">new_points_sim_list_w3 &lt;-<span class="st"> </span><span class="kw">split</span>(new_points_sim_w2[-ss,],<span class="dv">1</span>:<span class="kw">nrow</span>(new_points_sim_w2[-ss,]))
+
+predmu_w3_o1 &lt;-<span class="st"> </span>parallel::<span class="kw">mclapply</span>(new_points_sim_list_w3,interpolant, outputs1_w3, new_points_sim_sub_w3,<span class="dt">A=</span>A_w3_o1,<span class="dt">Ainv=</span>Ainv_w3_o1,<span class="dt">scales=</span>pars_w3_o1,<span class="dt">g=</span><span class="ot">TRUE</span>,<span class="dt">mc.cores=</span><span class="dv">4</span>)
+predmu_w3_o2 &lt;-<span class="st"> </span>parallel::<span class="kw">mclapply</span>(new_points_sim_list_w3,interpolant, outputs2_w3, new_points_sim_sub_w3,<span class="dt">A=</span>A_w3_o2,<span class="dt">Ainv=</span>Ainv_w3_o2,<span class="dt">scales=</span>pars_w3_o2,<span class="dt">g=</span><span class="ot">TRUE</span>,<span class="dt">mc.cores=</span><span class="dv">4</span>)
+
+predvar_w3_o1 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w3_o1,function(x) x$Z))
+pred_w3_o1 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w3_o1,function(x) x$mstar.star))
+
+predvar_w3_o2 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w3_o2,function(x) x$Z))
+pred_w3_o2 &lt;-<span class="st"> </span><span class="kw">unlist</span>(<span class="kw">lapply</span>(predmu_w3_o2,function(x) x$mstar.star))
+        
+pn &lt;-<span class="st"> </span><span class="kw">cbind</span>(pred_w3_o1,pred_w3_o2)
+mse &lt;-<span class="st"> </span><span class="kw">cbind</span>(predvar_w3_o1,predvar_w3_o2)^<span class="dv">2</span>
+modelvar &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="fl">0.1</span>*<span class="kw">var</span>(outputs1_w3),<span class="fl">0.1</span>*<span class="kw">var</span>(outputs2_w3))
+
+predictn &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="kw">do.call</span>(<span class="st">'rbind'</span>,<span class="kw">lapply</span>(new_points_sim_list_w3,rescale,ipmean,ipmax)))
+
+predictn$impl &lt;-<span class="st"> </span><span class="kw">sapply</span>(<span class="dv">1</span>:<span class="kw">nrow</span>(pn),function(x){ 
+  imp &lt;-<span class="st"> </span><span class="kw">as.matrix</span>(data[,<span class="kw">c</span>(<span class="st">'slope'</span>,<span class="st">'intercept'</span>)] -<span class="st"> </span>pn[x,]) %*%<span class="st"> </span><span class="kw">solve</span>(<span class="kw">diag</span>(mse[x,]+modelvar)) %*%<span class="st"> </span><span class="kw">t</span>(<span class="kw">as.matrix</span>(data[,<span class="kw">c</span>(<span class="st">'slope'</span>,<span class="st">'intercept'</span>)] -<span class="st"> </span>pn[x,]))
+  <span class="kw">return</span>(imp)
+})
+
+<span class="kw">colnames</span>(predictn) &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="st">'n'</span>,<span class="st">'q'</span>,<span class="st">'h'</span>,<span class="st">'beta'</span>,<span class="st">'Implausibility'</span>)
+
+<span class="kw">require</span>(ggplot2)
+
+<span class="kw">ggplot</span>(predictn,<span class="kw">aes</span>(<span class="dt">x=</span>n,<span class="dt">y=</span>q,<span class="dt">z=</span>Implausibility)) +<span class="st"> </span><span class="kw">stat_summary2d</span>(<span class="dt">fun =</span> function(x) <span class="kw">mean</span>(x&gt;<span class="dv">3</span>))</code></pre></div>
+<div class="figure">
+<img src="2015-05-05-emulation_using_GPs_files/figure-markdown/unnamed-chunk-12-1.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">ggplot</span>(predictn,<span class="kw">aes</span>(<span class="dt">x=</span>n,<span class="dt">y=</span>beta,<span class="dt">z=</span>Implausibility)) +<span class="st"> </span><span class="kw">stat_summary2d</span>(<span class="dt">fun =</span> function(x) <span class="kw">mean</span>(x&gt;<span class="dv">3</span>))</code></pre></div>
+<div class="figure">
+<img src="2015-05-05-emulation_using_GPs_files/figure-markdown/unnamed-chunk-12-2.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">ggplot</span>(predictn,<span class="kw">aes</span>(<span class="dt">x=</span>h,<span class="dt">y=</span>beta,<span class="dt">z=</span>Implausibility)) +<span class="st"> </span><span class="kw">stat_summary2d</span>(<span class="dt">fun =</span> function(x) <span class="kw">mean</span>(x&gt;<span class="dv">3</span>))</code></pre></div>
+<div class="figure">
+<img src="2015-05-05-emulation_using_GPs_files/figure-markdown/unnamed-chunk-12-3.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">keepers_w3 &lt;-<span class="st"> </span>predictn %&gt;%<span class="st"> </span><span class="kw">filter</span>(Implausibility&lt;<span class="dv">3</span>) %&gt;%<span class="st"> </span><span class="kw">select</span>(-Implausibility)
+
+<span class="kw">nrow</span>(keepers_w3)/<span class="kw">length</span>(new_points_sim_list_w3)</code></pre></div>
+<pre><code>## [1] 0.3219766</code></pre>
+<p>I could probably keep going here, but will leave it at this for a trail - 32% of points remaining. How do the remaining parameter estiamtes stack up against the first round (previous histograms)?</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">hist</span>(keepers_w3$n)</code></pre></div>
+<div class="figure">
+<img src="2015-05-05-emulation_using_GPs_files/figure-markdown/compare-1.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">hist</span>(keepers_w3$q)</code></pre></div>
+<div class="figure">
+<img src="2015-05-05-emulation_using_GPs_files/figure-markdown/compare-2.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">hist</span>(keepers_w3$beta)</code></pre></div>
+<div class="figure">
+<img src="2015-05-05-emulation_using_GPs_files/figure-markdown/compare-3.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">hist</span>(keepers_w3$h)</code></pre></div>
+<div class="figure">
+<img src="2015-05-05-emulation_using_GPs_files/figure-markdown/compare-4.png" alt />
+
+</div>
+<p>It looks as though the history matching got us quite a bit closer to the true values,although the distributions for <span class="math inline"><em>β</em></span> and <span class="math inline"><em>q</em></span> are peaked towards the extremes, whereas the distribution of <span class="math inline"><em>n</em></span> is peaked near the true value of 0.8. h seems poorly constrained by the slope, so I might need to think of other metrics to constrain h. But this could indicate that for the purpose of a community spectrum, the value of h is less important.</p>
+<p>I should really have a look at the predicted spectrum slopes from the GPs vs the real slopes to see how well the GP is doing at predicting the slope. That'll be next time...</p>
+<h2 id="references">References</h2>
+<p><br></p>
+<div id="references" class="references">
+<div id="ref-andrianakis:bayesian:2015">
+<p>Andrianakis, I., I. R. Vernon, N. McCreesh, T. J. McKinley, J. E. Oakley, R. N. Nsubuga, M. Goldstein, and R. G. White. 2015. Bayesian History Matching of Complex Infectious Disease Models Using Emulation: A Tutorial and a Case Study on HIV in Uganda. PLoS Comput Biol 11:e1003968.</p>
+</div>
+<div id="ref-kennedy:2001:bayesian">
+<p>Kennedy, M. C., and A. O’Hagan. 2001. Bayesian calibration of computer models. Journal of the Royal Statistical Society. Series B, Statistical Methodology:425–464.</p>
+</div>
+<div id="ref-vernon:2010:galaxy">
+<p>Vernon, I., M. Goldstein, R. G. Bower, and others. 2010. Galaxy formation: A bayesian uncertainty analysis. Bayesian Analysis 5:619–669.</p>
+</div>
+</div>
+
+            </div>
+        </main>
+        <footer>
+        </footer>
+        <script src="//code.jquery.com/jquery-2.1.3.min.js"></script>
+        <script>
+        $(document).ready(function() {
+        $('#js-navigation-menu').removeClass("show");
+        $('#js-mobile-menu').on('click', function(e) {
+        e.preventDefault();
+        $('#js-navigation-menu').slideToggle(function(){
+        if($('#js-navigation-menu').is(':hidden')) {
+        $('#js-navigation-menu').removeAttr('style');
+        }
+        });
+        });
+        });
+        </script>
+    </body>
+</html>
