@@ -447,7 +447,7 @@ ggplot(mdens) +
 
 ```
 
-I'm not particularly sure of this calculation at this point; but it does suggest that over a range of spectrum slopes, the prey-preference is on average at 1/100th ($10^-2$) of the prey size. This seems to suggest that previous analyses using a PPMR of 100 are close to the observed mean preference.
+I'm not particularly sure of this calculation at this point; but it does suggest that over a range of spectrum slopes, the prey-preference is on average at 1/100th ($10^{-2}$) of the prey size. This seems to suggest that previous analyses using a PPMR of 100 are close to the observed mean preference.
 
 ## References
 <br>

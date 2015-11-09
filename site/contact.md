@@ -7,12 +7,12 @@ Philipp Neubauer
 
 <br> <br>
 
-<img src="images/phil.png" width="200" height="300" />
+<a href="https://www.dragonfly.co.nz/people/neubauer-philipp.html"> <img src="images/phil.png" width="200" height="300"> </a>
 
 <br> <br>
 
-Fisheries ecologist @ \
-Dragonfly Science \
+[Fisheries ecologist](https://www.dragonfly.co.nz/people/neubauer-philipp.html) @ \
+[Dragonfly Science](https://www.dragonfly.co.nz) \
 PO Box 27535  \
 Wellington 6141 \
 New Zealand \

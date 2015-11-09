@@ -14,6 +14,6 @@ I will then connect size based models to data from global fisheries databases to
 This project is funded by the Marsden fund, grant no. DFG-14-001.
 <br><br><br>
 
-<img style="float: left;" src="images/Marsden.jpg" width="300" height="150" />
+<a href="http://www.royalsociety.org.nz/programmes/funds/marsden/"> <img style="float: left;" src="images/Marsden.jpg" width="300" height="150"> </a>
 
-<img style="float: right;" src="images/dragonfly-logo-rgb.png" width="400" height="81" />
+<a href="https://www.dragonfly.co.nz"> <img style="float: right;" src="images/dragonfly-logo-rgb.png" width="400" height="81"> </a>
