@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <title>FFWD fish blog</title>
+        <link rel="stylesheet" type="text/css" href="../css/style.css" />
+    </head>
+    <body>
+        <header class="navigation">
+            <div class="navigation-wrapper">
+                <a href="javascript:void(0)" class="logo">
+                    <img src="../images/logo_Sam.png" alt="Logo Image" align="middle">
+                </a>
+                <a href="javascript:void(0)" class="navigation-menu-button" id="js-mobile-menu">MENU</a>
+                <div class="nav">
+                    <ul id="js-navigation-menu" class="navigation-menu show">
+                        <li class="nav-link"><a href="../index.html">Home</a></li>
+                        <li class="nav-link"><a href="../archive.html">Archive</a></li>
+                        <li class="nav-link"><a href="../about.html">About</a></li>
+                        <li class="nav-link"><a href="../contact.html">Contact</a></li>
+                        <li class="nav-link"><a href="https://github.com/Philipp-Neubauer/FFWD-Fish"> <img src="../images/Octocat_small.png" width="66.66" height="55.41" align="top"></a></li>
+                    </ul>
+                </div>
+                 
+            </div>
+        </header>
+        <main>
+            
+            <div class="container">
+            <div class="info">
+    <br>
+    
+    Posted on November  9, 2015
+    
+        by "Philipp Neubauer"
+    
+</div>
+
+<p>In a <a href="2015-05-05-emulation_using_GPs.html">previous try</a>, I played with history matching, a method for fitting complex computer simulation models to data <span class="citation">(Kennedy and O’Hagan 2001)</span>. My first try (hack?) was a rather naive attempt to understand how history matching works in general, and to get an idea of its usefulness for fitting size-spectra to data. But I didn't really make a serious attempt at going through a history matching excersize that might produce useful insights into possible parameter values of uncertain size-spectrum parameters.</p>
+<p>So for this try I will make a more serious attempt at fitting size-spectra, using a simulated trait based model with multivariate outputs (species bioamss levels, possibly others). I will start with a very course evaluation of active parameters: those are the parameters that are considered uncertain and which fundametally alter the dynamics of the system (those whose variation does not alter the system behaviour are obviously somewhat redundant).</p>
+<p>One thing that did become clear in the first round of history matching was that univariate emulators are very inefficient. In this post, I will try more efficient multi-variate emulators that are based on assumption of separability of input and output variances <span class="citation">(Rougier 2008)</span>. I will also more explicitly query if the emulator makes reasonable predictions away from data, which is be cruicial if this type of method is to work for ecosystem models.</p>
+<h1 id="setting-up-a-trait-based-model">Setting up a trait based model</h1>
+<p>I will use mizer to set up a trait based model, and estiamte its (active) parameters. The mizer vignette provides a convenient reminder how to set this up:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">no_sp =<span class="st"> </span><span class="dv">10</span>
+min_w_inf &lt;-<span class="st"> </span><span class="dv">10</span>
+max_w_inf &lt;-<span class="st"> </span><span class="fl">1e5</span>
+w_inf &lt;-<span class="st"> </span><span class="dv">10</span>^<span class="kw">seq</span>(<span class="dt">from=</span><span class="kw">log10</span>(min_w_inf), <span class="dt">to =</span> <span class="kw">log10</span>(max_w_inf), <span class="dt">length=</span><span class="dv">10</span>)
+knife_edges &lt;-<span class="st"> </span>w_inf *<span class="st"> </span><span class="fl">0.05</span>
+
+truth &lt;-<span class="st"> </span><span class="kw">set_trait_model</span>(<span class="dt">no_sp =</span> no_sp, 
+                         <span class="dt">r_pp =</span> <span class="dv">10</span>,
+                         <span class="dt">kappa =</span> <span class="fl">0.01</span>,
+                         <span class="dt">h=</span><span class="dv">40</span>,
+                         <span class="dt">beta =</span> <span class="dv">160</span>,
+                         <span class="dt">sigma=</span> <span class="dv">2</span>,
+                         <span class="dt">f_0 =</span> <span class="fl">0.8</span>,
+                         <span class="dt">min_w_inf =</span> min_w_inf, 
+                         <span class="dt">max_w_inf =</span> max_w_inf,
+                         <span class="dt">knife_edge_size =</span> knife_edges)
+  
+sim &lt;-<span class="st"> </span><span class="kw">project</span>(truth, <span class="dt">t_max =</span> <span class="dv">100</span>, <span class="dt">dt=</span><span class="fl">0.2</span>, <span class="dt">effort =</span> <span class="fl">0.4</span>)
+
+<span class="kw">plot</span>(sim)</code></pre></div>
+<div class="figure">
+<img src="2015-11-09-MV-emulating-size-based-models_files/figure-markdown/simulation-1.png" alt />
+
+</div>
+<p>Looks like this arbitrary trait based model has converged to a stable solution. I now use mean biomass (though I could use just the last year) and total catch over the last 25 years as data for the calibration.</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">biom &lt;-<span class="st"> </span><span class="kw">colMeans</span>(<span class="kw">getBiomass</span>(sim)[<span class="dv">75</span>:<span class="dv">100</span>,])
+catch &lt;-<span class="st"> </span><span class="kw">colSums</span>(<span class="kw">getYield</span>(sim)[<span class="dv">75</span>:<span class="dv">100</span>,])</code></pre></div>
+<p>Time to think about how to emulate this model. In geenral, species are linked and catch is linked to biomass (trivially in this case), so uni-variate emulation seems like the wrong appraoch. An alternative is multivariate emulation. In aprticular, the method described in <span class="citation">Rougier (2008)</span> may be appropriate here, since variability for the outputs is probably similar in output space (although I am not sure how similar <span class="math inline">$\Epsilon_B$</span> and <span class="math inline">$\Epsilon_C$</span> will be with repsect to variability in the inputs.)</p>
+<h2 id="references">References</h2>
+<p><br></p>
+<div id="references" class="references">
+<div id="ref-kennedy:2001:bayesian">
+<p>Kennedy, M. C., and A. O’Hagan. 2001. Bayesian calibration of computer models. Journal of the Royal Statistical Society. Series B, Statistical Methodology:425–464.</p>
+</div>
+<div id="ref-rougier:2008:efficient">
+<p>Rougier, J. 2008. Efficient emulators for multivariate deterministic functions. Journal of Computational and Graphical Statistics 17:827–843.</p>
+</div>
+</div>
+
+            </div>
+        </main>
+        <footer>
+        </footer>
+        <script src="//code.jquery.com/jquery-2.1.3.min.js"></script>
+        <script>
+        $(document).ready(function() {
+        $('#js-navigation-menu').removeClass("show");
+        $('#js-mobile-menu').on('click', function(e) {
+        e.preventDefault();
+        $('#js-navigation-menu').slideToggle(function(){
+        if($('#js-navigation-menu').is(':hidden')) {
+        $('#js-navigation-menu').removeAttr('style');
+        }
+        });
+        });
+        });
+        </script>
+    </body>
+</html>
