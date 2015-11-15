@@ -204,7 +204,6 @@ COVS<- data.frame(intercept=1,COVS)
 THIS TAKES LONG!
 
 ```{r jags run}
-
 #keep a set of obs back for prediction and model checking
 PREYA = round(seq(1,nrow(ppmr.data),l=100))
 
@@ -262,11 +261,13 @@ Model fitting takes a while - a few hours for three concurrent MCMC chains runni
 
 ```{r results='hide'}
 JM
+
 ```
 
 We can also look at the predictions at withheld data points from the dataset to look for systematic deviations:
 
 ```{r predictions}
+
 preds <- JM$BUGSoutput$sims.list[grepl('pred',names(JM$BUGSoutput$sims.list))]
 
 obs <- log10(ppmr.data$Prey.mass)[round(seq(1,nrow(ppmr.data),l=100))]
@@ -297,6 +298,7 @@ Globally, model fit looks good judging from this subset of data points. This is 
 ### Drivers of PPMRs
 
 ```{r scales_of_variability}
+
 sds <- JM$BUGSoutput$sims.list[grepl('sd',names(JM$BUGSoutput$sims.list))]
 msd <- reshape2::melt(sds)
 
@@ -331,6 +333,7 @@ It looks as though the INLA model from the [previous post](2015-10-20-Beta_pt1.h
 Another way to visualise the taxonomic effects is via the taxonomic hierarchy, plotting the predicted distribution of mean PPMRs at each taxonomic level:
   
 ```{r taxonomic_prediction, fig.cap="Figure: Predicted distribution of means for the next lower taxonomic level. For example, the distributions at the class level determine the order means within each class and so forth. At the species level, the distributions determine individual level PPMRs."}
+
 obss <- JM$BUGSoutput$sims.list[c('l_obs','l_obs_sp','l_obs_fam','l_obs_cl','l_obs_ord')]
 colnames(obss$l_obs) <- 'Overall'
 colnames(obss$l_obs_fam) <- unique(ppmr.data$Family) 
@@ -374,6 +377,7 @@ This hierarchy clearly shows that there are wide, yet similar distributions for 
 These can be tabulated to inspect whether inferences from previous analyses hold up in this comprehensive analysis:
 
 ```{r cov_table}
+
 ob <- JM$BUGSoutput$sims.list['betas']
 colnames(ob$betas) <- colnames(COVS)
 
@@ -399,7 +403,6 @@ In agreement with the INLA analysis, the over-all intercept is lower than report
 These inferences are for realised PPMRs, and are determined by local availability/relative abundance of prey sizes. Geographic/study effects may reflect differences in local availability. In theory, the community spectrum has a slope of around -2 [@andersen:asymptotic:2006]. However, locally the slopes may be significantly different. What would our inferences about predator preference be given different slopes? This can be back-calculated over a range of slopes:
 
 ```{r}
-
 ob <- JM$BUGSoutput$sims.list[c('tau','betas')]
 
 slopes=seq(1,3,0.1); ddif = slopes

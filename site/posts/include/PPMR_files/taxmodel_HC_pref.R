@@ -38,6 +38,7 @@ model{
   ### Taxonomic fx
   # individual fx from species distribution
   for(i in 1:NIND){
+    inddev[i] <- txfx[i] - speciesmu[species[i]]
     txfx[i] <- speciesmu[species[i]]+species.xi[species[i]]*ind.eta[i]
     # species tau drawn from hierarchical distr over all families
     ind.eta[i] ~ dnorm(0,species.prec)
@@ -46,6 +47,7 @@ model{
   # species fx from family distribution
   for(s in 1:NSPECIES){
     # species mean drawn from family dist
+    speciesdev[s] <- speciesmu[s] - familymu[family[s]]
     speciesmu[s] <- familymu[family[s]]+family.xi[family[s]]*species.eta[s]
     l_obs_sp[s] ~ dnorm(betas[1]+speciesmu[s]+species.xi[s]*sp_pred.eta[s],tau)
     # species tau drawn from hierarchical distr over all families
@@ -57,6 +59,7 @@ model{
   # family fx from order distribution
   for(f in 1:NFAMILIES){
     # family mean drawn from order dist
+    familydev[f] <- familymu[f] - ordermu[order[f]]
     familymu[f] <- ordermu[order[f]]+order.xi[order[f]]*family.eta[f]
     l_obs_fam[f] ~ dnorm(betas[1]+familymu[f]+family.xi[f]*fam_pred.eta[f],tau)
     # family tau drawn from hierarchical distr over all families
@@ -68,6 +71,7 @@ model{
   # order fx from class distribution
   for(o in 1:NORDERS){
     # order mean drawn from order dist
+    orderdev[o] <- ordermu[o] - classmu[class[o]]
     ordermu[o] <- classmu[class[o]]+class.xi[class[o]]*order.eta[o]
     l_obs_ord[o] ~ dnorm(betas[1]+ordermu[o]+order.xi[o]*ord_pred.eta[o],tau)
     # order tau drawn from hierarchical distr over all orders
@@ -119,10 +123,10 @@ model{
   hab.prec ~ dgamma(0.5,0.5)
   
   # finite population sds
-  sd.ind     <- sd(txfx)
-  sd.species <- sd(speciesmu)
-  sd.family  <- sd(familymu)
-  sd.order   <- sd(ordermu)
+  sd.ind     <- sd(inddev)
+  sd.species <- sd(speciesdev)
+  sd.family  <- sd(familydev)
+  sd.order   <- sd(orderdev)
   sd.class   <- sd(classmu)
   sd.geoareafx    <- sd(geoareafx)
   sd.habfx   <- sd(habfx)
