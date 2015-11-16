@@ -62,11 +62,13 @@ catch <- colSums(getYield(sim)[75:100,])
 
 ## Building an emulator
 
+
+
 Since I want to do a sweep for active parameters first, I take all parameters that may be considered uncertain in the input dataset. Note that this leads to a large hyper-cube of unknowns, even with a small grid of possible values across all unknowns. I.e., with 8 unknowns, the grid with $n=3$ evaluations for each variable is $3^8 \times 8$. Although it can be efficiently parallelised, the runs required to get this many outputs take a considerable amount of time. just adding one more point per parameter would mean pushing the envelope (about 1000CPU hours), any more would be prohibitive. How then to make this tractable? The answer is to run a small grid (i.e., $n=3$) and then use a fast emulator to interpolate model outputs and discard those that we believe are implausible. Here's a start:
 
 ```{r make training data}
 
-cube_pred <- 18
+cube_pred <- 7
 lseq <- function(mins,maxs,l) 10^(seq(log10(mins),log10(maxs),l=l))
 
 preds <- data.frame(#seq(2/3,0.9,l=cube_pred),
@@ -85,7 +87,7 @@ pred_pre_list_jitter[pred_pre_list_jitter<0] <- pred_pre_list[pred_pre_list_jitt
 colnames(pred_pre_list_jitter) <- c('h','r_pp','sigma')
 
 pred_list <- split(data.frame(pred_pre_list_jitter),1:nrow(pred_pre_list))       
-system.time( simdat <- parallel::mclapply(pred_list,run_SS_sim,mc.cores = 4))
+system.time( simdat <- parallel::mclapply(pred_list,run_SS_sim,mc.cores = 8))
 
 sim_data <- do.call('rbind',simdat)
 
@@ -94,16 +96,88 @@ sim_data <- do.call('rbind',simdat)
 I will keep some of the data here to evaluate the emulator - so I'll make a training and a test set:
 
 ```{r make test set}
-naset <- which(apply(sim_data,1,function(x) any(is.na(x))))
-sim_data <- sim_data[-naset,]
+#naset <- which(apply(sim_data,1,function(x) any(is.na(x))))
+#sim_data <- sim_data[-naset,]
 
-pred_pre_list_df <- data.frame(pred_pre_list)
-pred_pre_list_df$p_reg <- apply(sim_data,1,function(x) any(x<(min(biom)/1000)))
+pred_pre_list_df <- data.frame(pred_pre_list_jitter)
+pred_pre_list_df$p_reg <- apply(sim_data,1,function(x) any(x<(min(biom)/100)))
 mpreds <- reshape2::melt(pred_pre_list_df)
 
-ggplot(mpreds) + facet_grid( p_reg ~ variable,scales = "free") + geom_bar(aes(x=value))
+ggplot(mpreds) + 
+  facet_grid( p_reg ~ variable,scales = "free") + 
+  geom_bar(aes(x=value)) + 
+  theme_bw() + 
+  xlab('Parameter')
 
-sim_data[,] <- min(biom)/1000
+
+pred_pre_list_df$p_reg  <- apply(sim_data,1,function(pred){
+  t(biom - pred) %*% 
+    solve(0.1*diag(diag(var(sim_data)))) %*% 
+    (biom - pred)
+})>3
+
+mpreds <- reshape2::melt(pred_pre_list_df)
+
+ggplot(mpreds) + 
+  facet_grid( p_reg ~ variable,scales = "free") + 
+  geom_bar(aes(x=value)) + 
+  theme_bw() + 
+  xlab('Parameter')
+
+```
+
+
+```{r}
+
+keep <- mpreds %>%
+  filter(p_reg ==F) %>%
+  group_by(variable) %>%
+  summarise(q1 = min(value),
+            q3 = max(value)) %>%
+  data.frame()
+
+cube_pred <- 7
+new_preds <- data.frame(#seq(2/3,0.9,l=cube_pred),
+            #seq(2/3,0.9,l=cube_pred),     
+            #seq(0.2,1,l=cube_pred),
+            h = seq(keep[1,2],keep[1,3],l=cube_pred),
+            #beta = seq(50,1000,l=cube_pred)#,
+            r_pp = lseq(keep[2,2],keep[2,3],l=cube_pred),
+            #kappa = seq(1e-3,1e-1,l=cube_pred),
+            sigma = seq(keep[3,2],keep[3,3],l=cube_pred)
+            )
+    
+new_pred_pre_list <- expand.grid(new_preds)
+new_pred_pre_list_jitter <- apply(new_pred_pre_list,2,function(x) x+rnorm(length(x),0,sd(x)/5))
+new_pred_pre_list_jitter[new_pred_pre_list_jitter<0] <- new_pred_pre_list[new_pred_pre_list_jitter<0]                                     
+colnames(new_pred_pre_list_jitter) <- c('h','r_pp','sigma')
+
+new_pred_list <- split(data.frame(new_pred_pre_list_jitter),1:nrow(new_pred_pre_list))       
+system.time( new_simdat <- parallel::mclapply(new_pred_list,run_SS_sim,mc.cores = 8))
+
+new_sim_data <- do.call('rbind',new_simdat)
+
+pred_pre_list_df <- data.frame(new_pred_pre_list_jitter)
+pred_pre_list_df$p_reg <- apply(new_sim_data,1,function(x) any(x<(min(biom)/100)))
+
+mpreds <- reshape2::melt(pred_pre_list_df)
+
+ggplot(mpreds) + 
+  facet_grid( p_reg ~ variable,scales = "free") + 
+  geom_bar(aes(x=value)) + 
+  theme_bw() + 
+  xlab('Parameter')
+
+keep <- mpreds %>%
+  filter(p_reg ==F) %>%
+  group_by(variable) %>%
+  summarise(q1 = min(value),
+            q3 = max(value)) %>%
+  data.frame()
+
+keepers <- !pred_pre_list_df$p_reg#apply(pred_pre_list_df, 1, function(x) x[1] > keep[1,2] & x[1] < keep[1,3] & x[2] > keep[2,2] & x[2] < keep[2,3] & x[3] > keep[3,2] & x[3] < keep[3,3])
+
+sim_data <- new_sim_data[keepers,]
 
 train <- sample.int(nrow(sim_data), size = 0.9*nrow(sim_data))
 test <- which(!(1:nrow(sim_data)) %in% train)
@@ -131,7 +205,7 @@ I can now define a GP emulator:
  
  # stdise is a normal centering and fixing to [-1,1], whereas stdise_wrt(x,y) is with respect to the mean and max of y 
 
-pred_pre_list <- pred_pre_list_jitter[-naset,]
+pred_pre_list <- new_pred_pre_list_jitter[keepers,]
 ins <- stdise(as.matrix(pred_pre_list[train,]))
 ins_test <- stdise_wrt(m(pred_pre_list[test,]),m(pred_pre_list[train,]))
 
@@ -139,6 +213,7 @@ outs <- stdise(log(sim_data_train))
 tests <- stdise_wrt(log(sim_data_test),log(sim_data_train))
 
 scales <- 1/(0.125*as.vector(diff(apply(ins,2,range))))^2
+out_grid <- seq(from=log10(min_w_inf), to = log10(max_w_inf), length=10)
 
 OPE <- define_OPE(c(2,(scales)),
                   inData = ins,
@@ -158,14 +233,6 @@ test_pred <- mclapply(ins_test,
 
 test_pred <- do.call('rbind',test_pred)
 
-plot((as.vector(test_pred$mu)),as.vector(t(log(sim_data_test))))
-abline(a=0,b=1)
-summary(lm(as.vector(test_pred$mu)~0+as.vector(t(log(sim_data_test)))))
-
-plot(lm(as.vector(test_pred$mu)~0+as.vector(log(t(sim_data_test)))))
-
-test_pred <- predictOPE(OPE, Rp = as.matrix(ins_test[1:20,]), type='EV')
-
 ```
 
 ### How well does the emulator perform?
@@ -174,9 +241,9 @@ For these inputs, it seems as though the emulator does well in interpolating the
 
 ```{r testing}
 
-predictions <- rev_stdise_wrt(test_pred$mu,log(sim_data_train))
-testa <- rev_stdise_wrt(tests,log(sim_data_train))
-quantile(abs(((predictions)-as.vector(log(sim_data_test)))/log(sim_data_test))*100)
+plot(exp(test_pred$mu),as.vector(t(sim_data_test)))
+abline(a=0,b=1)
+summary(lm(exp(test_pred$mu)~0+as.vector(t(sim_data_test))))
 
 ```
 
@@ -203,13 +270,12 @@ Admittedly, I have some uncertainty about the quality of predictions, but over a
 It might be possible to get better prediction by adjusting the length scale of the GP covariances. For this, I need a function to optimise the length scales based on the GP marginal likelihoods, and then define the new emulator by those length scales:
 
 ```{r optimise OPE}
-sset <- sample.int(nrow(ins),1e3)
 
 opt_OPE <- optim(c(2,0.5*(scales)),
       define_OPE,
-      inData = stdise(as.matrix(pred_pre_list[sset,])),
+      inData = stdise(as.matrix(pred_pre_list)),
       outGrid = out_grid,
-      outData = stdise(log(sim_data[sset,])),
+      outData = stdise(log(sim_data)),
       opt=T,
       control = list(fnscale=-1,
                      trace = 100,
@@ -226,16 +292,15 @@ OPE_opt <- define_OPE(opt_OPE$par,
 
 OPE_opt_test <- adjustOPE(OPE_opt, R = ins, Y = outs)
 
-system.time(test_pred <- predictOPE(OPE_opt_test, Rp = ins_test, type='EV'))
+test_pred <- emulate(ins_test,
+                     OPE_opt_test,
+                     split=F,
+                     rev_std_out=T,
+                     rev_std_data = log(sim_data_train))
 
-predictions <- rev_stdise_wrt(test_pred$mu,log(sim_data_train))
-testa <- rev_stdise_wrt(tests,log(sim_data_train))
-quantile(abs(((predictions)-log(sim_data_test))/log(sim_data_test))*100)
-plot((predictions),log(sim_data_test))
+plot(exp(test_pred$mu),as.vector(t(sim_data_test)))
 abline(a=0,b=1)
-summary(lm(as.vector(predictions)~0+as.vector(log(sim_data_test))))
-
-plot(lm(as.vector(predictions)~0+as.vector(log(sim_data_test))))
+summary(lm(exp(test_pred$mu)~0+as.vector(t(sim_data_test))))
 
 ```
 
@@ -247,34 +312,40 @@ To test the emulator, its worthwhile testing how well the emulator predicts the 
 
 ```{r test opt_OPT response}
 cube <- 4
-testset1 <- data.frame(h=18.8,
-                       beta = seq(50,1000,l=cube),
-                       r_pp = 34,
-                       kappa = 0.034,
-                       sigma= 1.666667)
+testset1 <- data.frame(h=seq(30,50,l=8),
+                         r_pp = 10,
+                         sigma= 1.3)
 
 test_data1 <- mclapply(split(testset1,1:nrow(testset1)),run_SS_sim,mc.cores = 4)
 
 testdata1 <- stdise_wrt(log(do.call('rbind',test_data1)),log(sim_data))
 testdata1 <- reshape2::melt(testdata1)
-colnames(testdata1) <- c('beta','Species','Biomass')
-testdata1$`beta` <- seq(50,1000,l=cube)
+colnames(testdata1) <- c('h','Species','Biomass')
+testdata1$h <- testset1$h
 
 testset1_st <- stdise_wrt(testset1,m(pred_pre_list))
 
-testdata1_em <- emulate(testset1_st)
+testdata1_em <- emulate(testset1_st,
+                     OPE_opt,
+                     split=T,
+                     rev_std_out=F,
+                     rev_std_data = log(sim_data))
+
 testdata1_em <- do.call('rbind',testdata1_em)
 
-colnames(testdata1_em)[3] <- 'beta'
-testdata1_em$`beta` <- rep(seq(50,1000,l=cube),each=10)
+colnames(testdata1_em)[3] <- 'h'
+testdata1_em$h <- rep(testset1$h,each=10)
 testdata1_em$Species <- 1:10
 
 test1 <- inner_join(testdata1_em,testdata1)
+test1$Species <- factor(test1$Species)
 
-ggplot(test1,aes(x=beta,fill=factor(Species))) +
-  geom_line(aes(y=Biomass,linetype='Biomass',col=factor(Species))) +
-  geom_ribbon(aes(y=mu,ymin=mu-sqrt(sigma),ymax=mu+sqrt(sigma),x=beta),alpha=0.2)+
-  geom_line(aes(y=mu,x=beta,linetype='Predictions',col=factor(Species))) + 
+ggplot(test1,aes(x=h,y=Biomass)) +
+  geom_line(aes(y=Biomass,linetype='Biomass',col=Species)) +
+  geom_ribbon(aes(y=mu,ymin=mu-sqrt(sigma),ymax=mu+sqrt(sigma),x=h,fill=Species),alpha=0.2)+
+  geom_line(aes(y=mu,x=h,linetype='Predictions',col=Species)) + 
+  facet_wrap(~Species) + 
+  scale_linetype_discrete('')+
   theme_classic()
 
 ```
