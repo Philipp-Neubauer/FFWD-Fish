@@ -88,10 +88,48 @@ emulate <- function(ins,emulator,split=F,rev_std_out=T,rev_std_data=NULL){
   if (rev_std_out) this.pred$mu <- rev_stdise_wrt(this.pred$mu,rev_std_data)
   dim(this.pred$Sigma) <- rep(length(this.pred$mu),2)
   out <- data.frame(mu=as.vector(this.pred$mu),
-                    sigma=diag(this.pred$Sigma),
+                    Sigma=diag(this.pred$Sigma),
                     ind = 1:nrow(this.pred$mu))
   out <- arrange(out,ind)
   if (split) out <- split(out,as.factor(out$ind))
  
   out
+}
+
+#' Test marginal response of the emulator given a testset
+test_em <- function(testset, 
+                    emulator, 
+                    variable) {
+  
+  test_data<- mclapply(split(testset,1:nrow(testset)),run_SS_sim,mc.cores = 4)
+  
+  testdata <- stdise_wrt(log(do.call('rbind',test_data)),log(sim_data))
+  testdata <- reshape2::melt(testdata)
+  colnames(testdata) <- c(variable,'Species','Biomass')
+  testdata[variable] <- testset[variable]
+  
+  testset_st <- stdise_wrt(testset,m(pred_pre_list))
+  
+  testdata_em <- emulate(testset_st,
+                         emulator,
+                         split=T,
+                         rev_std_out=F,
+                         rev_std_data = log(sim_data))
+  
+  testdata_em <- do.call('rbind',testdata_em)
+  
+  colnames(testdata_em)[3] <- variable
+  testdata_em[variable] <- rep(testset[[variable]],each=10)
+  testdata_em$Species <- 1:10
+  
+  test <- inner_join(testdata_em,testdata)
+  test$Species <- factor(test$Species)
+  
+  ggplot(test,aes_string(x=variable,y='Biomass')) +
+    geom_line(aes(linetype='Biomass',col=Species)) +
+    geom_ribbon(aes(y=mu,ymin=mu-sqrt(Sigma),ymax=mu+sqrt(Sigma),fill=Species),alpha=0.2)+
+    geom_line(aes(y=mu,linetype='Predictions',col=Species)) + 
+    facet_wrap(~Species) + 
+    scale_linetype_discrete('') +
+    theme_classic()
 }
