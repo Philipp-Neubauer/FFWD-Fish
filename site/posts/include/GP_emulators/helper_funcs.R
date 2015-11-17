@@ -19,12 +19,15 @@ run_SS_sim <- function(inputs){
 }
 
 
-jitter_preds <- function(preds){
+jitter_preds <- function(preds, keep=NULL){
   pred_pre_list <- expand.grid(preds)
   pred_pre_list_jitter <- sapply(1:ncol(pred_pre_list),function(x) {
     x_old <- pred_pre_list[,x]
     new_x <- x_old+rnorm(length(x_old),0,sd(x_old)/5)
-    sapply(new_x, function(z) min(max(z,keep[x,2]),keep[x,3]))
+    if (!is.null(keep)){
+      sapply(new_x, function(z) min(max(z,keep[x,2]),keep[x,3]))} else {
+      new_x  
+      }
   })
   colnames(pred_pre_list_jitter) <- c('h','r_pp','sigma')
   pred_pre_list_jitter
@@ -115,7 +118,7 @@ test_em <- function(testset,
                     emulator, 
                     variable) {
   
-  test_data<- mclapply(split(testset,1:nrow(testset)),run_SS_sim,mc.cores = 4)
+  test_data<- mclapply(split(testset,1:nrow(testset)),run_SS_sim,mc.cores = 8)
   
   testdata <- stdise_wrt(log(do.call('rbind',test_data)),log(sim_data))
   testdata <- reshape2::melt(testdata)

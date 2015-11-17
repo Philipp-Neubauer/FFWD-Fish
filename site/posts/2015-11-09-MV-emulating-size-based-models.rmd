@@ -135,7 +135,7 @@ new_preds <- data.frame(#seq(2/3,0.9,l=cube_pred),
             sigma = seq(keep[3,2],keep[3,3],l=cube_pred)
             )
     
-new_pred_pre_list_jitter <- jitter_preds(new_preds)
+new_pred_pre_list_jitter <- jitter_preds(new_preds,keep)
 
 mp <- reshape2::melt(new_pred_pre_list_jitter)
 ggplot(mp,aes(x=value)) + 
