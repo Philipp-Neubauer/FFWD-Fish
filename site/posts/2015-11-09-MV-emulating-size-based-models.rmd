@@ -84,7 +84,7 @@ pred_pre_list_jitter <- jitter_preds(preds)
 pred_list <- split(data.frame(pred_pre_list_jitter),1:nrow(pred_pre_list))       
 system.time( simdat <- parallel::mclapply(pred_list,
                                           run_SS_sim,
-                                          mc.cores = 8))
+                                          mc.cores = 6))
 
 sim_data <- do.call('rbind',simdat)
 
