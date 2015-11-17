@@ -253,11 +253,13 @@ It might be possible to get better prediction by adjusting the length scale of t
 
 ```{r optimise OPE}
 
-opt_OPE <- optim(c(10,0.5*(scales)),
+sset <- sample.int(nrow(pred_pre_list),1e3)
+
+opt_OPE <- optim(c(1,(scales)),
       define_OPE,
-      inData = stdise(as.matrix(pred_pre_list)),
+      inData = stdise(as.matrix(pred_pre_list[sset,])),
       outGrid = out_grid,
-      outData = stdise(log(sim_data)),
+      outData = stdise(log(sim_data[sset,])),
       opt=T,
       control = list(fnscale=-1,
                      trace = 100,
