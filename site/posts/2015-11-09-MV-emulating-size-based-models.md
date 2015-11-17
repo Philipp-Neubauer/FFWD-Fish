@@ -2,34 +2,26 @@
 author: Philipp Neubauer
 date: '09/11/2015'
 output: 'md\_document'
-<<<<<<< HEAD
-title: 'History matching size-based models 2: a more serious attempt'
-...
-
-=======
 title: 'Emulating trait-based models 2: a more serious attempt'
 ...
 
 Emulating trait-based models 2: a more serious attempt
 ======================================================
 
->>>>>>> bde146351e4ce20ecff4d7fec1fc65d271f1850d
 In a [previous try](2015-05-05-emulation_using_GPs.html), I played with
 history matching, a method for fitting complex computer simulation
 models to data [@kennedy:2001:bayesian]. My first try (hack?) was a
 rather naive attempt to understand how history matching works in
 general, and to get an idea of its usefulness for fitting size-spectra
 to data. But I didn't really make a serious attempt at going through a
-<<<<<<< HEAD
+
 history matching excersize that might produce useful insights into
 =======
 history matching exercise that might produce useful insights into
->>>>>>> bde146351e4ce20ecff4d7fec1fc65d271f1850d
 possible parameter values of uncertain size-spectrum parameters.
 
 So for this try I will make a more serious attempt at fitting
 size-spectra, using a simulated trait based model with multivariate
-<<<<<<< HEAD
 outputs (species bioamss levels, possibly others). I will start with a
 very course evaluation of active parameters: those are the parameters
 that are considered uncertain and which fundametally alter the dynamics
@@ -37,7 +29,6 @@ that are considered uncertain and which fundametally alter the dynamics
 outputs (species biomass levels, possibly others). I will start with a
 very course evaluation of active parameters: those are the parameters
 that are considered uncertain and which fundamentally alter the dynamics
->>>>>>> bde146351e4ce20ecff4d7fec1fc65d271f1850d
 of the system (those whose variation does not alter the system behaviour
 are obviously somewhat redundant).
 
@@ -46,7 +37,7 @@ was that univariate emulators are very inefficient. In this post, I will
 try more efficient multi-variate emulators that are based on assumption
 of separability of input and output variances [@rougier:2008:efficient].
 I will also more explicitly query if the emulator makes reasonable
-<<<<<<< HEAD
+
 predictions away from data, which is be cruicial if this type of method
 is to work for ecosystem models.
 
@@ -62,7 +53,7 @@ Setting up a trait based model
 ------------------------------
 
 I will use mizer to set up a trait based model, and estimate its
->>>>>>> bde146351e4ce20ecff4d7fec1fc65d271f1850d
+
 (active) parameters. The mizer vignette provides a convenient reminder
 how to set this up:
 
@@ -74,7 +65,7 @@ w_inf <- 10^seq(from=log10(min_w_inf), to = log10(max_w_inf), length=10)
 knife_edges <- w_inf * 0.05
 
 truth <- set_trait_model(no_sp = no_sp, 
-<<<<<<< HEAD
+
                          r_pp = 10,
                          kappa = 0.01,
                          h=40,
@@ -87,7 +78,7 @@ truth <- set_trait_model(no_sp = no_sp,
                          r_pp = 10,
                          beta = 300,
                          sigma= 1.3,
->>>>>>> bde146351e4ce20ecff4d7fec1fc65d271f1850d
+
                          min_w_inf = min_w_inf, 
                          max_w_inf = max_w_inf,
                          knife_edge_size = knife_edges)
@@ -108,7 +99,7 @@ biom <- colMeans(getBiomass(sim)[75:100,])
 catch <- colSums(getYield(sim)[75:100,])
 ```
 
-<<<<<<< HEAD
+
 Since I want to do a sweep for active parameters first, I take all
 parameters that may be considered uncertain in the input dataset. Note
 taht this leads to a large hypercube of unknowns, even with a small grid
@@ -144,12 +135,12 @@ are implausible. Here's a start:
 ``` {.r}
 cube_pred <- 8
 lseq <- function(mins,maxs,l) 10^(seq(log10(mins),log10(maxs),l=l))
->>>>>>> bde146351e4ce20ecff4d7fec1fc65d271f1850d
+
 
 preds <- data.frame(#seq(2/3,0.9,l=cube_pred),
             #seq(2/3,0.9,l=cube_pred),     
             #seq(0.2,1,l=cube_pred),
-<<<<<<< HEAD
+
             h = seq(3,50,l=cube_pred),
             beta = seq(50,1000,l=cube_pred),
             r_pp = seq(1,100,l=cube_pred),
@@ -201,7 +192,7 @@ system.time( simdat <- parallel::mclapply(pred_list,
 
     ##     user   system  elapsed 
     ## 7459.018   31.001 1535.538
->>>>>>> bde146351e4ce20ecff4d7fec1fc65d271f1850d
+
 
 ``` {.r}
 sim_data <- do.call('rbind',simdat)
@@ -211,7 +202,7 @@ I will keep some of the data here to evaluate the emulator - so I'll
 make a training and a test set:
 
 ``` {.r}
-<<<<<<< HEAD
+
 =======
 #naset <- which(apply(sim_data,1,function(x) any(is.na(x))))
 #sim_data <- sim_data[-naset,]
@@ -333,7 +324,7 @@ keepers <- !pred_pre_list_df$p_reg#apply(pred_pre_list_df, 1, function(x) x[1] >
 
 sim_data <- new_sim_data[keepers,]
 
->>>>>>> bde146351e4ce20ecff4d7fec1fc65d271f1850d
+
 train <- sample.int(nrow(sim_data), size = 0.9*nrow(sim_data))
 test <- which(!(1:nrow(sim_data)) %in% train)
 
@@ -341,7 +332,7 @@ sim_data_train <- sim_data[train,]
 sim_data_test <- sim_data[test,]
 ```
 
-<<<<<<< HEAD
+
 Time to think about how to emulate this model. In geenral, species are
 linked and catch is linked to biomass (trivially in this case), so
 uni-variate emulation seems like the wrong appraoch. An alternative is
@@ -357,7 +348,7 @@ multivariate emulation. In particular, the method described in
 @rougier:2008:efficient may be appropriate here, since variability for
 the outputs is probably similar in output space (although I am not sure
 how similar $\Sigma_B$ and $\Sigma_C$ will be with respect to
->>>>>>> bde146351e4ce20ecff4d7fec1fc65d271f1850d
+
 variability in the inputs.)
 
 First, source Johnathan Rougiers code:
@@ -366,7 +357,7 @@ First, source Johnathan Rougiers code:
 source("include/GP_emulators/OPE.R")
 ```
 
-<<<<<<< HEAD
+
 Next I set up a naive set of regressors that define a Gaussian process
 mean, in this case I use a 3rd order polynomial:
 
@@ -806,7 +797,6 @@ test_em(testset33,
     ## Joining by: c("r_pp", "Species")
 
 ![](2015-11-09-MV-emulating-size-based-models_files/figure-markdown/test%20opt_OPT%20response2-3.png)
->>>>>>> bde146351e4ce20ecff4d7fec1fc65d271f1850d
 
 References
 ----------
