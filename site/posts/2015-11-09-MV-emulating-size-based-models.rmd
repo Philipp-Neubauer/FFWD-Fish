@@ -84,7 +84,7 @@ pred_pre_list_jitter <- jitter_preds(preds)
 pred_list <- split(data.frame(pred_pre_list_jitter),1:nrow(pred_pre_list))       
 system.time( simdat <- parallel::mclapply(pred_list,
                                           run_SS_sim,
-                                          mc.cores = 4))
+                                          mc.cores = 8))
 
 sim_data <- do.call('rbind',simdat)
 
@@ -152,7 +152,7 @@ new_pred_list <- split(data.frame(new_pred_pre_list_jitter),
 
 system.time( new_simdat <- parallel::mclapply(new_pred_list,
                                               run_SS_sim,
-                                              mc.cores = 4))
+                                              mc.cores = 8))
 
 new_sim_data <- do.call('rbind',new_simdat)
 
@@ -229,7 +229,7 @@ test_pred <- mclapply(ins_test_sp,
                                             split=F,
                                             rev_std_out=T,
                                             rev_std_data = log(sim_data_train)),
-                      mc.cores = 4)
+                      mc.cores = 8)
 
 test_pred <- do.call('rbind',test_pred)
 
@@ -281,7 +281,7 @@ test_pred <- mclapply(ins_test_sp,
                                             split=F,
                                             rev_std_out=T,
                                             rev_std_data = log(sim_data_train)),
-                      mc.cores = 4)
+                      mc.cores = 8)
 
 test_pred <- do.call('rbind',test_pred)
 

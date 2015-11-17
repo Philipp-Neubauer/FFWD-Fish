@@ -18,6 +18,20 @@ run_SS_sim <- function(inputs){
   this.biom
 }
 
+
+jitter_preds <- function(preds){
+  pred_pre_list <- expand.grid(preds)
+  pred_pre_list_jitter <- sapply(1:ncol(pred_pre_list),function(x) {
+    x_old <- pred_pre_list[,x]
+    new_x <- x_old+rnorm(length(x_old),0,sd(x_old)/5)
+    sapply(new_x, function(z) min(max(z,keep[x,2]),keep[x,3]))
+  })
+  colnames(pred_pre_list_jitter) <- c('h','r_pp','sigma')
+  pred_pre_list_jitter
+}
+
+
+
 input_reg <- function(inputs) {
   out <- cbind(1,inputs,inputs^2,inputs^3)
   rownames(out) <- sprintf('input %d',1:nrow(as.matrix(inputs)))
