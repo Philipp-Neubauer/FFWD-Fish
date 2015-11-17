@@ -66,7 +66,7 @@ Since I want to do a sweep for active parameters first, I take all parameters th
 
 ```{r make training data}
 
-cube_pred <- 7
+cube_pred <- 8
 lseq <- function(mins,maxs,l) 10^(seq(log10(mins),log10(maxs),l=l))
 
 preds <- data.frame(#seq(2/3,0.9,l=cube_pred),
@@ -100,7 +100,7 @@ pred_pre_list_df <- data.frame(pred_pre_list_jitter)
 
 pred_pre_list_df$p_reg  <- apply(sim_data,1,function(pred){
   t(biom - pred) %*% 
-    solve(0.5*(var(sim_data))) %*% 
+    diag(1/(0.5*(diag(var(sim_data))))) %*% 
     (biom - pred)
 })>3
 
