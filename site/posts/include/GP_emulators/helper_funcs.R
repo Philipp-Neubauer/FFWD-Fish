@@ -27,8 +27,10 @@ jitter_preds <- function(preds, keep=NULL){
     if (!is.null(keep)){
       sapply(new_x, function(z) min(max(z,keep[x,2]),keep[x,3]))} else {
       new_x[new_x<0] <- x_old[new_x<0]
+      new_x
       }
   })
+ # print(head(pred_pre_list_jitter))
   colnames(pred_pre_list_jitter) <- c('h','r_pp','sigma')
   pred_pre_list_jitter
 }
