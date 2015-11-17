@@ -148,7 +148,7 @@ ggplot(mp,aes(x=value)) +
 ```{r run training set}
                         
 new_pred_list <- split(data.frame(new_pred_pre_list_jitter),
-                       1:nrow(new_pred_pre_list))   
+                       1:nrow(new_pred_pre_list_jitter))   
 
 system.time( new_simdat <- parallel::mclapply(new_pred_list,
                                               run_SS_sim,
