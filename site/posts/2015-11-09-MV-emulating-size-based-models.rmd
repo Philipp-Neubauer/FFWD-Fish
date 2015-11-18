@@ -9,9 +9,9 @@ output: md_document
 
 In a [previous try](2015-05-05-emulation_using_GPs.html), I played with history matching, a method for fitting complex computer simulation models to data [@kennedy:2001:bayesian]. My first try (hack?) was a rather naive attempt to understand how history matching works in general, and to get an idea of its usefulness for fitting size-spectra to data. But I didn't really make a serious attempt at going through a history matching exercise that might produce useful insights into possible parameter values of uncertain size-spectrum parameters.
 
-So for this try I will make a more serious attempt at fitting size-spectra, using a simulated trait based model with multivariate outputs (species biomass levels, possibly others). I will start with a very course evaluation of active parameters: those are the parameters that are considered uncertain and which fundamentally alter the dynamics of the system (those whose variation does not alter the system behaviour are obviously somewhat redundant).
+So for this try I will make a more serious attempt at fitting statistical models to emulate trait based simulation models with multivariate outputs (e.g., species biomass levels). I will start with a very course evaluation of plausible parameter spaces, before building the emulator within that space. Due to the massive non-linarities in the size-spectra, a more loose approach of building an emulator over a large parameter space leads to poor emulation.
 
-One thing that did become clear in the first round of history matching was that univariate emulators are very inefficient. In this post, I will try more efficient multi-variate emulators that are based on assumption of separability of input and output variances [@rougier:2008:efficient]. I will also more explicitly query if the emulator makes reasonable predictions away from data, which is be crucial if this type of method is to work for ecosystem models.
+One thing that did become clear in the first round of history matching was that univariate emulators are very inefficient. In this post, I will try more efficient multi-variate emulators that are based on assumption of separability of input and output variances [@rougier:2008:efficient]. I will also more explicitly query if the emulator makes reasonable predictions away from data, which is be crucial if this type of method is to work for ecosystem models and provide a path towards fitting these models to data.
 
 ```{r preamble,echo=F,message=F,results='hide'}
 require("mizer")
@@ -25,7 +25,7 @@ source("include/GP_emulators/helper_funcs.R")
 
 ## Setting up a trait based model
 
-I will use mizer to set up a trait based model, and estimate its (active) parameters. The mizer vignette provides a convenient reminder how to set this up:
+I will use the mizer package to set up a trait based model, and estimate its (active) parameters. The mizer vignette provides a convenient reminder how to set this up:
 
 ```{r simulation, warning=FALSE,message=FALSE}
 no_sp = 10
@@ -50,7 +50,7 @@ plot(sim)
 
 ```
 
-Looks like this arbitrary trait based model has converged to a stable solution. I now use mean biomass (though I could use just the last year) and total catch over the last 25 years as data for the calibration.
+Looks like this arbitrary trait based model has converged to a stable solution. I now use mean biomass over the last 25 years as data for the calibration (though I could use just the last year, or some otehr variables).
 
 
 ``` {r data}
@@ -62,7 +62,7 @@ catch <- colSums(getYield(sim)[75:100,])
 
 ## Building an emulator
 
-Since I want to do a sweep for active parameters first, I take all parameters that may be considered uncertain in the input dataset. Note that this leads to a large hyper-cube of unknowns, even with a small grid of possible values across all unknowns. I.e., with 8 unknowns, the grid with $n=3$ evaluations for each variable is $3^8 \times 8$. Although it can be efficiently parallelised, the runs required to get this many outputs take a considerable amount of time. just adding one more point per parameter would mean pushing the envelope (about 1000CPU hours), any more would be prohibitive. How then to make this tractable? The answer is to run a small grid (i.e., $n=3$) and then use a fast emulator to interpolate model outputs and discard those that we believe are implausible. Here's a start:
+In this example, I chose to use just three ecologocal parameters (h, sigma and r_pp) as unknowns, keeping all other parameters fixed to provide a tractable start. A more realistic design leads to a much large hyper-cube of unknowns, even with a small grid of possible values across all unknowns. I.e., with p parameters, the grid with $n$ evaluations for each variable is $n^p$. Although it can be efficiently parallelised, the runs required to get this many outputs take a considerable amount of time. How then to make this tractable? The answer is to run a small grid (i.e., $n=3$) and then use a fast emulator to interpolate model outputs and discard those that we believe are implausible. Here's a start, making a first set of training data for the emulator by running the size-based model on a grid of parameter values.:
 
 ```{r make training data}
 
@@ -90,7 +90,7 @@ sim_data <- do.call('rbind',simdat)
 
 ```
 
-I will keep some of the data here to evaluate the emulator - so I'll make a training and a test set:
+Here I chose to right away get rid of some regions of parameter space (i.e., calcualte implausibility based on simualtion runs alone.)
 
 ```{r check first outputs, Wave 0 of checking for predictions that are wayy off}
 #naset <- which(apply(sim_data,1,function(x) any(is.na(x))))
@@ -100,7 +100,7 @@ pred_pre_list_df <- data.frame(pred_pre_list_jitter)
 
 pred_pre_list_df$p_reg  <- apply(sim_data,1,function(pred){
   t(biom - pred) %*% 
-    diag(1/(0.5*(diag(var(sim_data))))) %*% 
+    diag(1/(0.1*(diag(var(sim_data))))) %*% 
     (biom - pred)
 })>3
 
@@ -117,25 +117,12 @@ ggplot(mpreds) +
 
 ```{r update training set}
 
-keep <- mpreds %>%
-  filter(p_reg ==F) %>%
-  group_by(variable) %>%
-  summarise(q1 = min(value),
-            q3 = max(value)) %>%
-  data.frame()
-
-cube_pred <- 12
-new_preds <- data.frame(#seq(2/3,0.9,l=cube_pred),
-            #seq(2/3,0.9,l=cube_pred),     
-            #seq(0.2,1,l=cube_pred),
-            h = seq(keep[1,2],keep[1,3],l=cube_pred),
-            #beta = seq(50,1000,l=cube_pred)#,
-            r_pp = lseq(keep[2,2],keep[2,3],l=cube_pred),
-            #kappa = seq(1e-3,1e-1,l=cube_pred),
-            sigma = seq(keep[3,2],keep[3,3],l=cube_pred)
-            )
-    
-new_pred_pre_list_jitter <- jitter_preds(new_preds,keep)
+leftovers <- pred_pre_list_df[!pred_pre_list_df$p_reg,1:3]
+oc = 40
+isd <- cov(leftovers)
+new_pred_pre_list_jitter <- t(apply(repmat(leftovers,oc,1),1,function(x) t(mvtnorm::rmvnorm(1,x,0.01*isd))))
+new_pred_pre_list_jitter <- new_pred_pre_list_jitter[-which(apply(new_pred_pre_list_jitter,1,function(x) any(x<=0))),]
+colnames(new_pred_pre_list_jitter) <- c('h','r_pp','sigma')
 
 mp <- reshape2::melt(new_pred_pre_list_jitter)
 ggplot(mp,aes(x=value)) + 
@@ -152,12 +139,15 @@ new_pred_list <- split(data.frame(new_pred_pre_list_jitter),
 
 system.time( new_simdat <- parallel::mclapply(new_pred_list,
                                               run_SS_sim,
-                                              mc.cores = 6))
+                                              mc.cores = 4))
 
+```
+
+```{r subset simdata}
 new_sim_data <- do.call('rbind',new_simdat)
 
 pred_pre_list_df <- data.frame(new_pred_pre_list_jitter)
-pred_pre_list_df$p_reg <- apply(new_sim_data,1,function(x) any(x<(min(biom)/1000)))
+pred_pre_list_df$p_reg <- apply(new_sim_data,1,function(x) any(x<(min(biom)/10000)))
 
 mpreds <- reshape2::melt(pred_pre_list_df)
 
@@ -174,15 +164,19 @@ keep <- mpreds %>%
             q3 = max(value)) %>%
   data.frame()
 
-keepers <- !pred_pre_list_df$p_reg#apply(pred_pre_list_df, 1, function(x) x[1] >= keep[1,2] & x[1] <= keep[1,3] & x[2] >= keep[2,2] & x[2] <= keep[2,3] & x[3] >= keep[3,2] & x[3] <= keep[3,3])
+keepers <- !pred_pre_list_df$p_reg & !is.na(pred_pre_list_df$p_reg)#apply(pred_pre_list_df, 1, function(x) x[1] >= keep[1,2] & x[1] <= keep[1,3] & x[2] >= keep[2,2] & x[2] <= keep[2,3] & x[3] >= keep[3,2] & x[3] <= keep[3,3]) ##
 
 sim_data <- new_sim_data[keepers,]
+
+sim_data <- unique(sim_data)
 
 train <- sample.int(nrow(sim_data), size = 0.9*nrow(sim_data))
 test <- which(!(1:nrow(sim_data)) %in% train)
 
 sim_data_train <- sim_data[train,]
 sim_data_test <- sim_data[test,]
+
+pred_pre_list <- unique(new_pred_pre_list_jitter[keepers,])
 
 ```
 
@@ -201,10 +195,9 @@ For the method to work, we need to specify regressors on the outputs, along with
 I can now define a GP emulator:
 
 ```{r define OPE}
- 
- # stdise is a normal centering and fixing to [-1,1], whereas stdise_wrt(x,y) is with respect to the mean and max of y 
+  # stdise is a normal centering and fixing to [-1,1], whereas stdise_wrt(x,y) is with respect to the mean and max of y 
 
-pred_pre_list <- new_pred_pre_list_jitter[keepers,]
+
 ins <- stdise(as.matrix(pred_pre_list[train,]))
 ins_test <- stdise_wrt(m(pred_pre_list[test,]),m(pred_pre_list[train,]))
 
@@ -215,12 +208,12 @@ scales <- 1/(0.125*as.vector(diff(apply(ins,2,range))))^2
 out_grid <- (seq(from=log10(min_w_inf), to = log10(max_w_inf), length=10))
 out_grid <- (out_grid-mean(out_grid))/sd(out_grid)
 
-OPE <- define_OPE(c(2,(scales)),
+OPE <- define_OPE(c(1,1*(scales)),
                   inData = ins,
                   outGrid = out_grid,
                   outData = outs)
  
-cuts <- cut(1:nrow(ins_test),nrow(ins_test)/10)
+cuts <- cut(1:nrow(ins_test),nrow(ins_test)/2)
 ins_test_sp <- split(data.frame(ins_test), cuts)
 
 test_pred <- mclapply(ins_test_sp, 
@@ -229,7 +222,7 @@ test_pred <- mclapply(ins_test_sp,
                                             split=F,
                                             rev_std_out=T,
                                             rev_std_data = log(sim_data_train)),
-                      mc.cores = 8)
+                      mc.cores = 4)
 
 test_pred <- do.call('rbind',test_pred)
 
@@ -241,9 +234,9 @@ For these inputs, it seems as though the emulator does well in interpolating the
 
 ```{r testing}
 
-plot(exp(test_pred$mu),as.vector(t(sim_data_test)))
+plot(exp(test_pred$mu),as.vector(t((sim_data_test))))
 abline(a=0,b=1)
-summary(lm(exp(test_pred$mu)~0+as.vector(t(sim_data_test))))
+summary(lm(exp(test_pred$mu)~0+as.vector(t((sim_data_test)))))
 
 ```
 
@@ -253,13 +246,11 @@ It might be possible to get better prediction by adjusting the length scale of t
 
 ```{r optimise OPE}
 
-sset <- sample.int(nrow(pred_pre_list),1e3)
-
 opt_OPE <- optim(c(1,(scales)),
       define_OPE,
-      inData = stdise(as.matrix(pred_pre_list[sset,])),
+      inData = stdise(as.matrix(pred_pre_list)),
       outGrid = out_grid,
-      outData = stdise(log(sim_data[sset,])),
+      outData = stdise(log(sim_data)),
       opt=T,
       control = list(fnscale=-1,
                      trace = 100,
@@ -283,7 +274,7 @@ test_pred <- mclapply(ins_test_sp,
                                             split=F,
                                             rev_std_out=T,
                                             rev_std_data = log(sim_data_train)),
-                      mc.cores = 8)
+                      mc.cores = 4)
 
 test_pred <- do.call('rbind',test_pred)
 
@@ -293,17 +284,18 @@ summary(lm(exp(test_pred$mu)~0+as.vector(t(sim_data_test))))
 
 ```
 
-Indeed, now 75% of predictions are within ```quantile(abs((exp(test_pred$mu)-as.vector(t(sim_data_test)))/as.vector(t(sim_data_test)))*100)[4]```% of the simulations. Much better! Some vindication that I am (perhaps) on the right track.
+Indeed, now 75% of predictions are within ```quantile(abs((exp(test_pred$mu)-as.vector(t(sim_data_test)))/as.vector(t(sim_data_test)))*100)[4]```% of the simulations.
 
 ## Can the emulator emulate the size-spectrum response?
 
-To test the emulator, its worthwhile testing how well the emulator predicts the responses to changes in the inputs:
+To test the emulator, its worthwhile testing how well the emulator predicts the marginal responses to changes in the inputs:
 
 ```{r test opt_OPT response}
+in_df <- data.frame(pred_pre_list)
 
-pred_size <- 20
+pred_size <- 8
 
-testset1 <- data.frame(h=seq(35,66,l=pred_size),
+testset1 <- data.frame(h=seq(min(in_df$h),max(in_df$h),l=pred_size),
                        r_pp = 10,
                        sigma= 1.3)
 
@@ -313,45 +305,17 @@ test_em(testset1,
 
 testset2 <- data.frame(h=40,
                        r_pp = 10,
-                       sigma= seq(1.7,3.5,l=pred_size))
+                       sigma= seq(min(in_df$sigma),max(in_df$sigma),l=pred_size))
 
 test_em(testset2, 
         OPE_opt, 
         'sigma')
 
 testset3 <- data.frame(h=40,
-                       r_pp = lseq(1,10,l=pred_size),
+                       r_pp = lseq(quantile(in_df$r_pp,0.05),quantile(in_df$r_pp,0.95),l=pred_size),
                        sigma= 1.3)
 
 test_em(testset3, 
-        OPE_opt, 
-        'r_pp')
-
-```
-
-```{r test opt_OPT response2}
-
-testset11 <- data.frame(h=seq(35,66,l=pred_size),
-                       r_pp = 1,
-                       sigma= 2.5)
-
-test_em(testset11, 
-        OPE_opt, 
-        'h')
-
-testset22 <- data.frame(h=60,
-                       r_pp = 1,
-                       sigma= seq(1.7,3.5,l=pred_size))
-
-test_em(testset22, 
-        OPE_opt, 
-        'sigma')
-
-testset33 <- data.frame(h=60,
-                       r_pp = lseq(1,10,l=pred_size),
-                       sigma= 2.5)
-
-test_em(testset33, 
         OPE_opt, 
         'r_pp')
 

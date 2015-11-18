@@ -18,6 +18,7 @@ run_SS_sim <- function(inputs){
   this.biom
 }
 
+lseq <- function(mins,maxs,l) 10^(seq(log10(mins),log10(maxs),l=l))
 
 jitter_preds <- function(preds, keep=NULL){
   pred_pre_list <- expand.grid(preds)
@@ -35,7 +36,13 @@ jitter_preds <- function(preds, keep=NULL){
   pred_pre_list_jitter
 }
 
-
+repmat = function(X,m,n){
+  ##R equivalent of repmat (matlab)
+  X<- as.matrix(X)
+  mx = dim(X)[1]
+  nx = dim(X)[2]
+  matrix(t(matrix(X,mx,nx*n)),mx*m,nx*n,byrow=T)
+}
 
 input_reg <- function(inputs) {
   out <- cbind(1,inputs,inputs^2,inputs^3)
