@@ -37,11 +37,12 @@
     
 </div>
 
-<p>In a <a href="2015-05-05-emulation_using_GPs.html">previous try</a>, I played with history matching, a method for fitting complex computer simulation models to data <span class="citation">(Kennedy and O’Hagan 2001)</span>. My first try (hack?) was a rather naive attempt to understand how history matching works in general, and to get an idea of its usefulness for fitting size-spectra to data. But I didn't really make a serious attempt at going through a history matching excersize that might produce useful insights into possible parameter values of uncertain size-spectrum parameters.</p>
-<p>So for this try I will make a more serious attempt at fitting size-spectra, using a simulated trait based model with multivariate outputs (species bioamss levels, possibly others). I will start with a very course evaluation of active parameters: those are the parameters that are considered uncertain and which fundametally alter the dynamics of the system (those whose variation does not alter the system behaviour are obviously somewhat redundant).</p>
-<p>One thing that did become clear in the first round of history matching was that univariate emulators are very inefficient. In this post, I will try more efficient multi-variate emulators that are based on assumption of separability of input and output variances <span class="citation">(Rougier 2008)</span>. I will also more explicitly query if the emulator makes reasonable predictions away from data, which is be cruicial if this type of method is to work for ecosystem models.</p>
-<h1 id="setting-up-a-trait-based-model">Setting up a trait based model</h1>
-<p>I will use mizer to set up a trait based model, and estiamte its (active) parameters. The mizer vignette provides a convenient reminder how to set this up:</p>
+<h1 id="emulating-trait-based-models-2-a-more-serious-attempt">Emulating trait-based models 2: a more serious attempt</h1>
+<p>In a <a href="2015-05-05-emulation_using_GPs.html">previous try</a>, I played with history matching, a method for fitting complex computer simulation models to data <span class="citation">(Kennedy and O’Hagan 2001)</span>. My first try (hack?) was a rather naive attempt to understand how history matching works in general, and to get an idea of its usefulness for fitting size-spectra to data. But I didn't really make a serious attempt at going through a history matching exercise that might produce useful insights into possible parameter values of uncertain size-spectrum parameters.</p>
+<p>So for this try I will make a more serious attempt at fitting statistical models to emulate trait based simulation models with multivariate outputs (e.g., species biomass levels). I will start with a very coarse evaluation of plausible parameter spaces, before building the emulator within that space. Due to the massive non-linearities in the size-spectra, a more loose approach of building an emulator over a large parameter space leads to poor emulation.</p>
+<p>One thing that did become clear in the first round of history matching was that uni-variate emulators are very inefficient. In this post, I will try more efficient multi-variate emulators that are based on assumption of separability of input and output variances <span class="citation">(Rougier 2008)</span>. I will also more explicitly query if the emulator makes reasonable predictions away from data, which is be crucial if this type of method is to work for ecosystem models and provide a path towards fitting these models to data.</p>
+<h2 id="setting-up-a-trait-based-model">Setting up a trait based model</h2>
+<p>I will use the mizer package to set up a trait based model, and estimate its (active) parameters. The mizer vignette provides a convenient reminder how to set this up:</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">no_sp =<span class="st"> </span><span class="dv">10</span>
 min_w_inf &lt;-<span class="st"> </span><span class="dv">10</span>
 max_w_inf &lt;-<span class="st"> </span><span class="fl">1e5</span>
@@ -49,12 +50,11 @@ w_inf &lt;-<span class="st"> </span><span class="dv">10</span>^<span class="kw">
 knife_edges &lt;-<span class="st"> </span>w_inf *<span class="st"> </span><span class="fl">0.05</span>
 
 truth &lt;-<span class="st"> </span><span class="kw">set_trait_model</span>(<span class="dt">no_sp =</span> no_sp, 
-                         <span class="dt">r_pp =</span> <span class="dv">10</span>,
-                         <span class="dt">kappa =</span> <span class="fl">0.01</span>,
                          <span class="dt">h=</span><span class="dv">40</span>,
-                         <span class="dt">beta =</span> <span class="dv">160</span>,
-                         <span class="dt">sigma=</span> <span class="dv">2</span>,
-                         <span class="dt">f_0 =</span> <span class="fl">0.8</span>,
+                         <span class="dt">kappa =</span> <span class="fl">0.01</span>,
+                         <span class="dt">r_pp =</span> <span class="dv">10</span>,
+                         <span class="dt">beta =</span> <span class="dv">300</span>,
+                         <span class="dt">sigma=</span> <span class="fl">1.3</span>,
                          <span class="dt">min_w_inf =</span> min_w_inf, 
                          <span class="dt">max_w_inf =</span> max_w_inf,
                          <span class="dt">knife_edge_size =</span> knife_edges)
@@ -66,142 +66,290 @@ sim &lt;-<span class="st"> </span><span class="kw">project</span>(truth, <span c
 <img src="2015-11-09-MV-emulating-size-based-models_files/figure-markdown/simulation-1.png" alt />
 
 </div>
-<p>Looks like this arbitrary trait based model has converged to a stable solution. I now use mean biomass (though I could use just the last year) and total catch over the last 25 years as data for the calibration.</p>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">biom &lt;-<span class="st"> </span><span class="kw">colMeans</span>(<span class="kw">getBiomass</span>(sim)[<span class="dv">75</span>:<span class="dv">100</span>,])
-catch &lt;-<span class="st"> </span><span class="kw">colSums</span>(<span class="kw">getYield</span>(sim)[<span class="dv">75</span>:<span class="dv">100</span>,])</code></pre></div>
-<p>Since I want to do a sweep for active parameters first, I take all parameters that may be considered uncertain in the input dataset. Note taht this leads to a large hypercube of unknowns, even with a small grid of possible values across all unknowns. I.e., with 8 unknowns, the grid with <span class="math inline"><em>n</em> = 3</span> evaluations for each variable is <span class="math inline">3<sup>8</sup> × 8</span>. Although it can be efficiently parallelised, the runs required to get this many outputs take a considerable amount of time. just adding one more point per parameter would mean pushing the enveloppe (about 1000CPU hours), any more would be prohibitive. How then to make this tractable? The answer is to run a small grid (i.e., <span class="math inline"><em>n</em> = 3</span>) and then use a fast emulator to interpolate model outputs and discard those that we believe are implausible. Here's a start:</p>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">cube_pred &lt;-<span class="st"> </span><span class="dv">4</span>
-
-preds &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="co">#seq(2/3,0.9,l=cube_pred),</span>
-            <span class="co">#seq(2/3,0.9,l=cube_pred),     </span>
-            <span class="co">#seq(0.2,1,l=cube_pred),</span>
-            <span class="dt">h =</span> <span class="kw">seq</span>(<span class="dv">3</span>,<span class="dv">50</span>,<span class="dt">l=</span>cube_pred),
-            <span class="dt">beta =</span> <span class="kw">seq</span>(<span class="dv">50</span>,<span class="dv">1000</span>,<span class="dt">l=</span>cube_pred),
-            <span class="dt">r_pp =</span> <span class="kw">seq</span>(<span class="dv">1</span>,<span class="dv">100</span>,<span class="dt">l=</span>cube_pred),
-            <span class="dt">kappa =</span> <span class="kw">seq</span>(<span class="fl">1e-4</span>,<span class="fl">1e-2</span>,<span class="dt">l=</span>cube_pred),
-            <span class="dt">sigma =</span> <span class="kw">seq</span>(<span class="dv">1</span>,<span class="dv">3</span>,<span class="dt">l=</span>cube_pred))
+<p>Looks like this arbitrary trait based model has converged to a stable solution. I now use the mean biomass over the last 25 years as data for the calibration (though I could use just the last year, or some other variables).</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">biom &lt;-<span class="st"> </span><span class="kw">colMeans</span>(<span class="kw">getBiomass</span>(sim)[<span class="dv">75</span>:<span class="dv">100</span>,])</code></pre></div>
+<h2 id="building-an-emulator">Building an emulator</h2>
+<p>In this example, I chose to use just three ecological parameters (h - the maximum food intake rate, sigma - the width of the prey selection kernel and r_pp - the primary productivity) as unknowns, keeping all other parameters fixed to provide a tractable start. Some initial exploration with the trait based model suggested that these variables had disproportionate effects - although other variables such as k0 - the multiplier on maximum recruitment - and beta (the mean of the prey selection kernel) should be considered uncertain in the future. Furthermore, some parameters, such as h and k0 may well cay among species, so could be considered as on a per-species basis in the future. But for now, I focus on the three parameters above to see if I can get a workable example. Here's a start, making a first set of training data for the emulator by running the size-based model on a grid of parameter values.:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">minmax &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">h =</span> <span class="kw">c</span>(<span class="dv">3</span>,<span class="dv">150</span>),
+                     <span class="dt">r_pp =</span> <span class="kw">c</span>(<span class="fl">0.005</span>,<span class="dv">100</span>),
+                     <span class="dt">sigma =</span> <span class="kw">c</span>(<span class="fl">0.5</span>,<span class="dv">4</span>))
     
-pred_pre_list &lt;-<span class="st"> </span><span class="kw">expand.grid</span>(preds)
-pred_list &lt;-<span class="st"> </span><span class="kw">split</span>(pred_pre_list,<span class="dv">1</span>:<span class="kw">nrow</span>(pred_pre_list))       
+LHC &lt;-<span class="st"> </span><span class="kw">latin.hypercube</span>(<span class="dv">250</span>,<span class="dv">3</span>)
 
+LHC_in &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="kw">sapply</span>(<span class="dv">1</span>:<span class="kw">ncol</span>(LHC), function(x)
+  LHC[,x]*<span class="kw">diff</span>(minmax[,x])+minmax[<span class="dv">1</span>,x]))
+
+<span class="kw">colnames</span>(LHC_in) &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="st">'h'</span>,<span class="st">'r_pp'</span>,<span class="st">'sigma'</span>)
+<span class="kw">plot</span>(LHC_in)</code></pre></div>
+<div class="figure">
+<img src="2015-11-09-MV-emulating-size-based-models_files/figure-markdown/make%20training%20data-1.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">pred_list &lt;-<span class="st"> </span><span class="kw">split</span>(LHC_in,<span class="dv">1</span>:<span class="kw">nrow</span>(LHC_in))       
 <span class="kw">system.time</span>( simdat &lt;-<span class="st"> </span>parallel::<span class="kw">mclapply</span>(pred_list,
-                             function(inputs){
-                               this.setup &lt;-<span class="st"> </span><span class="kw">set_trait_model</span>(<span class="dt">no_sp =</span> no_sp, 
-                                                             <span class="dt">r_pp =</span> inputs$r_pp,
-                                                             <span class="dt">kappa =</span> inputs$kappa,
-                                                             <span class="dt">h=</span>inputs$h,
-                                                             <span class="dt">beta =</span> inputs$beta,
-                                                             <span class="dt">sigma=</span> inputs$sigma,
-                                                             <span class="dt">q=</span><span class="fl">0.9</span>,<span class="co">#inputs$q,</span>
-                                                             <span class="dt">p=</span><span class="fl">0.75</span>,<span class="co">#inputs$p,</span>
-                                                             <span class="dt">n=</span><span class="dv">2</span>/<span class="dv">3</span>,<span class="co">#inputs$n,</span>
-                                                             <span class="dt">f_0 =</span> <span class="fl">0.8</span>,
-                                                             <span class="dt">min_w_inf =</span> min_w_inf, 
-                                                             <span class="dt">max_w_inf =</span> max_w_inf,
-                                                             <span class="dt">knife_edge_size =</span> knife_edges)
-                               
-                               this.sim &lt;-<span class="st"> </span><span class="kw">project</span>(this.setup, <span class="dt">t_max =</span> <span class="dv">100</span>, <span class="dt">dt=</span><span class="fl">0.2</span>, <span class="dt">effort =</span> <span class="fl">0.4</span>)
-                               this.biom &lt;-<span class="st"> </span><span class="kw">colMeans</span>(<span class="kw">getBiomass</span>(this.sim)[<span class="dv">75</span>:<span class="dv">100</span>,])
-                               this.biom
-                             },<span class="dt">mc.cores =</span> <span class="dv">4</span>))</code></pre></div>
-<pre><code>##      user    system   elapsed 
-## 17940.710    37.464  6297.544</code></pre>
+                                          run_SS_sim,
+                                          <span class="dt">mc.cores =</span> <span class="dv">4</span>))</code></pre></div>
+<pre><code>##     user   system  elapsed 
+## 3605.216   23.464 1402.426</code></pre>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">sim_data &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'rbind'</span>,simdat)</code></pre></div>
-<p>I will keep some of the data here to evaluate the emulator - so I'll make a training and a test set:</p>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">train &lt;-<span class="st"> </span><span class="kw">sample.int</span>(<span class="kw">nrow</span>(sim_data), <span class="dt">size =</span> <span class="fl">0.9</span>*<span class="kw">nrow</span>(sim_data))
+<p>Here I chose to right away get rid of some regions of parameter space (i.e., calculate the implausibility <span class="citation">(Andrianakis et al. 2015)</span> based on simulation runs alone.). Since I do not use an emulator here, and the simulations are deterministic, I need to consider model uncertainty as the main source of uncertainty. Model uncertainty is the uncertainty due to model mis-specification and is notoriously hard to pin down. Here I set it very conservatively to half the variance of the simulation outputs over a wide range of input parameters. This should ensure that I only discard parameter values that produce really absurd outputs (i.e., extinction of some species). For a more detailed intro to Implausibility and its application in the analysis of simulation outputs, see <span class="citation">(Andrianakis et al. 2015)</span>.</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co">#naset &lt;- which(apply(sim_data,1,function(x) any(is.na(x))))</span>
+<span class="co">#sim_data &lt;- sim_data[-naset,]</span>
+
+LHC_in$p_reg  &lt;-<span class="st"> </span><span class="kw">apply</span>(sim_data,<span class="dv">1</span>,function(pred){
+  <span class="kw">t</span>(biom -<span class="st"> </span>pred) %*%<span class="st"> </span>
+<span class="st">    </span><span class="kw">solve</span>(<span class="fl">0.5</span>*<span class="kw">var</span>(sim_data)) %*%<span class="st"> </span>
+<span class="st">    </span>(biom -<span class="st"> </span>pred)
+})&gt;<span class="dv">3</span>
+
+mpreds &lt;-<span class="st"> </span>reshape2::<span class="kw">melt</span>(LHC_in)
+
+<span class="kw">ggplot</span>(mpreds) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">facet_grid</span>( p_reg ~<span class="st"> </span>variable,<span class="dt">scales =</span> <span class="st">&quot;free&quot;</span>) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_bar</span>(<span class="kw">aes</span>(<span class="dt">x=</span>value)) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">theme_bw</span>() +<span class="st"> </span>
+<span class="st">  </span><span class="kw">xlab</span>(<span class="st">'Parameter'</span>)</code></pre></div>
+<div class="figure">
+<img src="2015-11-09-MV-emulating-size-based-models_files/figure-markdown/check%20first%20outputs,%20Wave%200%20of%20checking%20for%20predictions%20that%20are%20wayy%20off-1.png" alt />
+
+</div>
+<p>I now use the remaining points that were not discarded (there aren't many!) to define a set of point to build the emulator on. This avoids training the emulator on a set of parameters and outputs that give widely different answers and dominate the model fit, but lead to poor predictions in the area of interest (i.e., parameters that make sense). The new set is made by drawing from a multivariate normal distribution around the remaining points to explore the space around those points.</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">leftovers &lt;-<span class="st"> </span>LHC_in[!LHC_in$p_reg,<span class="dv">1</span>:<span class="dv">3</span>]
+oc =<span class="st"> </span><span class="dv">500</span>/<span class="kw">nrow</span>(leftovers)
+isd &lt;-<span class="st"> </span><span class="kw">cov</span>(leftovers)
+
+<span class="co"># draw from mv norm around leftover values</span>
+new_pred_pre_list_jitter &lt;-<span class="st"> </span><span class="kw">t</span>(<span class="kw">apply</span>(<span class="kw">repmat</span>(leftovers,oc,<span class="dv">1</span>),<span class="dv">1</span>,function(x) <span class="kw">t</span>(mvtnorm::<span class="kw">rmvnorm</span>(<span class="dv">1</span>,x,<span class="fl">0.05</span>*isd))))
+
+<span class="co">#remove values &lt;0</span>
+new_pred_pre_list_jitter &lt;-<span class="st"> </span>new_pred_pre_list_jitter[(<span class="kw">apply</span>(new_pred_pre_list_jitter,<span class="dv">1</span>,function(x) !<span class="kw">any</span>(x&lt;=<span class="dv">0</span>))),]
+
+<span class="kw">colnames</span>(new_pred_pre_list_jitter) &lt;-<span class="st"> </span><span class="kw">c</span>(<span class="st">'h'</span>,<span class="st">'r_pp'</span>,<span class="st">'sigma'</span>)
+
+mp &lt;-<span class="st"> </span>reshape2::<span class="kw">melt</span>(new_pred_pre_list_jitter)
+<span class="kw">ggplot</span>(mp,<span class="kw">aes</span>(<span class="dt">x=</span>value)) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_histogram</span>(<span class="kw">aes</span>(<span class="dt">x=</span>value)) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">facet_wrap</span>(~Var2,<span class="dt">scales=</span><span class="st">'free'</span>) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">theme_bw</span>()+<span class="st"> </span>
+<span class="st">  </span><span class="kw">xlab</span>(<span class="st">'Parameter'</span>)</code></pre></div>
+<div class="figure">
+<img src="2015-11-09-MV-emulating-size-based-models_files/figure-markdown/update%20training%20set-1.png" alt />
+
+</div>
+<p>Running the simulator to make a training set for the emulator:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">new_pred_list &lt;-<span class="st"> </span><span class="kw">split</span>(<span class="kw">data.frame</span>(new_pred_pre_list_jitter),
+                       <span class="dv">1</span>:<span class="kw">nrow</span>(new_pred_pre_list_jitter))   
+
+<span class="kw">system.time</span>( new_simdat &lt;-<span class="st"> </span>parallel::<span class="kw">mclapply</span>(new_pred_list,
+                                              run_SS_sim,
+                                              <span class="dt">mc.cores =</span> <span class="dv">4</span>))</code></pre></div>
+<pre><code>##     user   system  elapsed 
+## 7823.918   47.031 2808.049</code></pre>
+<p>I throw out some combinations of parameters that lead to collapse. In a full history matching exerciser I wouldn't want to do this since they hold information about areas of poor fit to the data - but here I use it to show that the emulator can indeed give OK (and fast!) predictions of the size spectrum in the parameter space of interest.</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">new_sim_data &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'rbind'</span>,new_simdat)
+
+<span class="kw">apply</span>(new_sim_data,<span class="dv">2</span>,quantile)</code></pre></div>
+<pre><code>##                 1            2            3            4           5
+## 0%   1.214603e-14 2.389684e-16 3.125777e-11 5.591015e-05 0.000110483
+## 25%  3.968203e-02 2.823006e-02 1.826962e-02 1.045243e-02 0.005940404
+## 50%  4.074494e-02 3.015760e-02 1.950100e-02 1.137221e-02 0.006557648
+## 75%  4.286972e-02 3.103498e-02 2.085808e-02 1.235430e-02 0.007204991
+## 100% 9.137295e-02 3.406246e-02 2.378123e-02 1.488946e-02 0.009529195
+##                 6            7            8            9           10
+## 0%   9.371776e-05 2.482895e-06 1.267268e-06 1.479355e-06 1.794694e-08
+## 25%  3.396647e-03 2.186649e-03 1.288443e-03 7.544060e-04 3.859230e-04
+## 50%  3.764519e-03 2.412484e-03 1.419151e-03 8.144193e-04 4.093707e-04
+## 75%  4.192701e-03 2.697608e-03 1.565078e-03 8.801683e-04 4.429484e-04
+## 100% 5.776116e-03 3.436912e-03 1.965239e-03 1.095945e-03 5.468055e-04</code></pre>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">pred_pre_list_df &lt;-<span class="st"> </span><span class="kw">data.frame</span>(new_pred_pre_list_jitter)
+pred_pre_list_df$p_reg &lt;-<span class="st"> </span><span class="kw">apply</span>(new_sim_data,<span class="dv">1</span>,function(x) <span class="kw">any</span>(x&lt;(<span class="kw">min</span>(biom)/<span class="dv">10</span>^<span class="dv">4</span>)))
+
+mpreds &lt;-<span class="st"> </span>reshape2::<span class="kw">melt</span>(pred_pre_list_df)
+
+<span class="kw">ggplot</span>(mpreds) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">facet_grid</span>( p_reg ~<span class="st"> </span>variable,<span class="dt">scales =</span> <span class="st">&quot;free&quot;</span>) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">geom_bar</span>(<span class="kw">aes</span>(<span class="dt">x=</span>value)) +<span class="st"> </span>
+<span class="st">  </span><span class="kw">theme_bw</span>() +<span class="st"> </span>
+<span class="st">  </span><span class="kw">xlab</span>(<span class="st">'Parameter'</span>)</code></pre></div>
+<div class="figure">
+<img src="2015-11-09-MV-emulating-size-based-models_files/figure-markdown/subset%20simdata-1.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">keepers &lt;-<span class="st">  </span>!<span class="kw">is.na</span>(pred_pre_list_df$p_reg) &amp;<span class="st"> </span>!(pred_pre_list_df$p_reg)
+
+sim_data &lt;-<span class="st"> </span>new_sim_data[keepers,]
+
+sim_data &lt;-<span class="st"> </span><span class="kw">unique</span>(sim_data)
+
+train &lt;-<span class="st"> </span><span class="kw">sample.int</span>(<span class="kw">nrow</span>(sim_data), <span class="dt">size =</span> <span class="fl">0.9</span>*<span class="kw">nrow</span>(sim_data))
 test &lt;-<span class="st"> </span><span class="kw">which</span>(!(<span class="dv">1</span>:<span class="kw">nrow</span>(sim_data)) %in%<span class="st"> </span>train)
 
 sim_data_train &lt;-<span class="st"> </span>sim_data[train,]
-sim_data_test &lt;-<span class="st"> </span>sim_data[test,]</code></pre></div>
-<p>Time to think about how to emulate this model. In geenral, species are linked and catch is linked to biomass (trivially in this case), so uni-variate emulation seems like the wrong appraoch. An alternative is multivariate emulation. In aprticular, the method described in <span class="citation">Rougier (2008)</span> may be appropriate here, since variability for the outputs is probably similar in output space (although I am not sure how similar <span class="math inline"><em>Σ</em><sub><em>B</em></sub></span> and <span class="math inline"><em>Σ</em><sub><em>C</em></sub></span> will be with repsect to variability in the inputs.)</p>
+sim_data_test &lt;-<span class="st"> </span>sim_data[test,]
+
+pred_pre_list &lt;-<span class="st"> </span><span class="kw">unique</span>(new_pred_pre_list_jitter[keepers,])</code></pre></div>
+<p>Time to think about how to emulate this model. In general, species are linked in the model, so uni-variate emulation seems like the wrong approach. An alternative is multivariate emulation. In particular, the method described in <span class="citation">Rougier (2008)</span> may be appropriate here since we are working with a standard matrix of outputs. The method assumes that the predictions can be decomposed into a regression in the inputs and a regression in the outputs (i.e., the size classes).</p>
 <p>First, source Johnathan Rougiers code:</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">source</span>(<span class="st">&quot;include/GP_emulators/OPE.R&quot;</span>)</code></pre></div>
-<p>Next I set up a naive set of regressors that define a Gaussian process mean, in this case I use a 3rd order polynomial:</p>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">input_reg &lt;-<span class="st"> </span>function(inputs) {
-  out &lt;-<span class="st"> </span><span class="kw">cbind</span>(<span class="dv">1</span>,inputs,inputs^<span class="dv">2</span>,inputs^<span class="dv">3</span>)
-  <span class="kw">rownames</span>(out) &lt;-<span class="st"> </span><span class="kw">sprintf</span>(<span class="st">'input %d'</span>,<span class="dv">1</span>:<span class="kw">nrow</span>(<span class="kw">as.matrix</span>(inputs)))
-  <span class="kw">as.matrix</span>(out)
-}</code></pre></div>
-<p>Next, set up the covariance function in the inputs:</p>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">require</span>(emulator)
+<p>For the method to work, we need to specify regressors on the inputs and outputs, along with a covariance, computed from the inputs and at points where the simulator is evaluated (i.e., where we calculate the biomass - at w_inf for each species). I use the same for inputs and outputs here as I have little prior idea. For the mean part of the GP regression, a second order polynomial seems like a relatively flexible start. Tor the covariance, I will start with an exponential covariance for simplicity. Later, I will try to learn the scale parameters of both matrices in order to optimise the emulator. The functions for means, variances and other helper functions are defined <a href="2015-11-09-MV-emulating-size-based-models_files/helper_funcs.R">here</a></p>
+<p>I can now define a GP emulator:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">  <span class="co"># stdise is a normal centering and fixing to [-1,1], whereas stdise_wrt(x,y) is with respect to the mean and max of y </span>
 
-input_var &lt;-<span class="st"> </span>function(inputs,<span class="dt">finputs=</span><span class="ot">NULL</span>) {
-  cmat &lt;-<span class="st"> </span><span class="kw">corr.matrix</span>(inputs,<span class="dt">yold=</span>finputs,<span class="dt">scales=</span><span class="dv">10</span>)
-  if(!<span class="kw">is.null</span>(finputs)) cmat &lt;-<span class="st"> </span><span class="kw">t</span>(cmat)
-  cmat
-}</code></pre></div>
-<p>For the method to work, we need to specify regressors on the outputs, along with a covariance, computed from the points where the simulator is evaluated (i.e., where we calculate the biomass - at w_inf for each species). I use the same as for the inputs here as I have little prior idea, and the polynomial seems a flexible start. Also, for the output covariance, I will start with an exponential covariance for simplicity. Later, I will try to learn the scale parameters of both matrices in order to optimise the emulator.</p>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">out_grid &lt;-<span class="st"> </span><span class="kw">seq</span>(<span class="dt">from=</span><span class="kw">log10</span>(min_w_inf), <span class="dt">to =</span> <span class="kw">log10</span>(max_w_inf), <span class="dt">length=</span><span class="dv">10</span>)
 
-output_reg &lt;-<span class="st"> </span>function(outputs) {
-  out &lt;-<span class="st"> </span><span class="kw">cbind</span>(<span class="dv">1</span>,outputs,outputs^<span class="dv">2</span>,outputs^<span class="dv">3</span>)
-  <span class="kw">rownames</span>(out) &lt;-<span class="st"> </span><span class="kw">sprintf</span>(<span class="st">'outputs %d'</span>,<span class="dv">1</span>:<span class="kw">nrow</span>(<span class="kw">as.matrix</span>(outputs)))
-  <span class="kw">as.matrix</span>(out)
-}
-
-output_regs &lt;-<span class="st"> </span><span class="kw">output_reg</span>(out_grid)
-
-output_var &lt;-<span class="st"> </span><span class="kw">corr.matrix</span>(<span class="kw">as.matrix</span>(out_grid),<span class="dt">scales=</span><span class="dv">1</span>)</code></pre></div>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"> vr &lt;-<span class="st"> </span><span class="kw">ncol</span>(<span class="kw">input_reg</span>(pred_pre_list))
- vs &lt;-<span class="st"> </span><span class="kw">ncol</span>(output_regs)
- ms &lt;-<span class="st"> </span><span class="kw">rep</span>(<span class="dv">0</span>, vr *<span class="st"> </span>vs)
- V &lt;-<span class="st"> </span><span class="kw">diag</span>(<span class="dv">1</span>^<span class="dv">2</span>, vr *<span class="st"> </span>vs)
-   a &lt;-<span class="st"> </span><span class="dv">1</span>
-   d &lt;-<span class="st"> </span><span class="dv">1</span>
-   NIG &lt;-<span class="st"> </span><span class="kw">list</span>(<span class="dt">m =</span> ms, <span class="dt">V =</span> V, <span class="dt">a =</span> a, <span class="dt">d =</span> d)
- 
- myOPE &lt;-<span class="st"> </span><span class="kw">initOPE</span>(<span class="dt">gr =</span> input_reg, 
-                  <span class="dt">kappar =</span> input_var, 
-                  <span class="dt">Gs =</span> output_regs , 
-                  <span class="dt">Ws =</span> output_var, 
-                  <span class="dt">NIG =</span> NIG)
-
- <span class="co"># stdise is a normal centering and fixing to [-1,1], whereas stdise_wrt(x,y) is with respect to the mean and max of y </span>
- 
-m &lt;-<span class="st"> </span>as.matrix
-stdise &lt;-<span class="st"> </span>function(x) <span class="kw">apply</span>(x,<span class="dv">2</span>,function(y) (y-<span class="kw">mean</span>(y))/<span class="kw">max</span>(y))
-stdise_wrt &lt;-<span class="st"> </span>function(x,z) <span class="kw">sapply</span>(<span class="dv">1</span>:<span class="kw">ncol</span>(x), function(y) (x[,y]-<span class="kw">mean</span>(z[,y]))/<span class="kw">max</span>(z[,y]))
-  
 ins &lt;-<span class="st"> </span><span class="kw">stdise</span>(<span class="kw">as.matrix</span>(pred_pre_list[train,]))
 ins_test &lt;-<span class="st"> </span><span class="kw">stdise_wrt</span>(<span class="kw">m</span>(pred_pre_list[test,]),<span class="kw">m</span>(pred_pre_list[train,]))
 
-outs &lt;-<span class="st"> </span>(sim_data_train-<span class="kw">mean</span>(sim_data_train))/<span class="kw">max</span>(sim_data_train)
-tests &lt;-<span class="st"> </span>(sim_data_test-<span class="kw">mean</span>(sim_data_train))/<span class="kw">max</span>(sim_data_train)
+outs &lt;-<span class="st"> </span><span class="kw">stdise</span>(<span class="kw">log</span>(sim_data_train))
+tests &lt;-<span class="st"> </span><span class="kw">stdise_wrt</span>(<span class="kw">log</span>(sim_data_test),<span class="kw">log</span>(sim_data_train))
 
-myOPE &lt;-<span class="st"> </span><span class="kw">adjustOPE</span>(myOPE, <span class="dt">R =</span> ins, <span class="dt">Y =</span> outs)
+scales &lt;-<span class="st"> </span><span class="dv">1</span>/(<span class="fl">0.125</span>*<span class="kw">as.vector</span>(<span class="kw">diff</span>(<span class="kw">apply</span>(ins,<span class="dv">2</span>,range))))^<span class="dv">2</span>
+out_grid &lt;-<span class="st"> </span>(<span class="kw">seq</span>(<span class="dt">from=</span><span class="kw">log10</span>(min_w_inf), <span class="dt">to =</span> <span class="kw">log10</span>(max_w_inf), <span class="dt">length=</span><span class="dv">10</span>))
+out_grid &lt;-<span class="st"> </span>(out_grid-<span class="kw">mean</span>(out_grid))/<span class="kw">sd</span>(out_grid)
 
-<span class="kw">system.time</span>(pp1 &lt;-<span class="st"> </span><span class="kw">predictOPE</span>(myOPE, <span class="dt">Rp =</span> ins_test, <span class="dt">type=</span><span class="st">'EV'</span>))</code></pre></div>
-<pre><code>##    user  system elapsed 
-##   0.731   0.088   0.820</code></pre>
-<p>For these inputs, it seems as though the emulator does well in interpolating the results from the size-spectrum for most of the test set, but some are awefully off:</p>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">quantile</span>(<span class="kw">abs</span>((pp1$mu-tests)/tests)*<span class="dv">100</span>)</code></pre></div>
-<pre><code>##           0%          25%          50%          75%         100% 
-## 9.471410e-04 6.773127e-01 1.934616e+00 5.404830e+00 1.191413e+03</code></pre>
-<p>What's this related to?</p>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co"># worst prediction</span>
-worst &lt;-<span class="st"> </span><span class="kw">which.max</span>(<span class="kw">rowMeans</span>(<span class="kw">abs</span>((pp1$mu-tests)/tests)*<span class="dv">100</span>))
-<span class="co"># severe under-prediction in the intermediate w_inf trait biomass</span>
-((pp1$mu[worst,]-tests[worst,])/tests[worst,])*<span class="dv">100</span></code></pre></div>
-<pre><code>##            1            2            3            4            5 
-##    0.3597241  -15.8464317   -2.7385533 1191.4130197  -10.9402668 
-##            6            7            8            9           10 
-##    3.6255405   -9.6846286   -1.8168665    0.9253876    0.9589792</code></pre>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co"># not really related to the actual test case biomass relative to the training set mean biomass</span>
+OPE &lt;-<span class="st"> </span><span class="kw">define_OPE</span>(<span class="kw">c</span>(<span class="dv">1</span>,<span class="dv">1</span>*(scales)),
+                  <span class="dt">inData =</span> ins,
+                  <span class="dt">outGrid =</span> out_grid,
+                  <span class="dt">outData =</span> outs)
+ 
+cuts &lt;-<span class="st"> </span><span class="kw">cut</span>(<span class="dv">1</span>:<span class="kw">nrow</span>(ins_test),<span class="kw">nrow</span>(ins_test)/<span class="dv">2</span>)
+ins_test_sp &lt;-<span class="st"> </span><span class="kw">split</span>(<span class="kw">data.frame</span>(ins_test), cuts)
 
-ins[worst,]</code></pre></div>
-<pre><code>##          h       beta       r_pp      kappa      sigma 
-## -0.1578574  0.4700145  0.4919544  0.4951792  0.1088189</code></pre>
-<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">apply</span>(ins,<span class="dv">2</span>,quantile)</code></pre></div>
-<pre><code>##               h       beta       r_pp      kappa      sigma
-## 0%   -0.4711907 -0.4799855 -0.4980456 -0.4948208 -0.3356255
-## 25%  -0.4711907 -0.1633189 -0.4980456 -0.4948208 -0.3356255
-## 50%   0.1554759  0.1533478  0.1619544 -0.1648208  0.1088189
-## 75%   0.4688093  0.4700145  0.4919544  0.4951792  0.3310411
-## 100%  0.4688093  0.4700145  0.4919544  0.4951792  0.3310411</code></pre>
-<p>Admittedly, I do not quite get where this is coming from - r_pp and sigma are high, h is low in the inputs that lead to the poor prediction, but kappa is low, yet the biomass at the inter-mediate size-level is under-estimated in the emulator.</p>
+test_pred &lt;-<span class="st"> </span><span class="kw">mclapply</span>(ins_test_sp, 
+                      function(ins) <span class="kw">emulate</span>(ins,
+                                            OPE,
+                                            <span class="dt">split=</span>F,
+                                            <span class="dt">rev_std_out=</span>T,
+                                            <span class="dt">rev_std_data =</span> <span class="kw">log</span>(sim_data_train)),
+                      <span class="dt">mc.cores =</span> <span class="dv">4</span>)
+
+test_pred &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'rbind'</span>,test_pred)</code></pre></div>
+<h3 id="how-well-does-the-emulator-perform">How well does the emulator perform?</h3>
+<p>For these inputs, it seems as though the emulator does well in interpolating the results from the size-spectrum for most of the test set:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">plot</span>(<span class="kw">exp</span>(test_pred$mu),<span class="kw">as.vector</span>(<span class="kw">t</span>((sim_data_test))),<span class="dt">xlab=</span><span class="st">'Predictions'</span>,<span class="dt">ylab=</span><span class="st">'Simulations'</span>)
+<span class="kw">abline</span>(<span class="dt">a=</span><span class="dv">0</span>,<span class="dt">b=</span><span class="dv">1</span>)</code></pre></div>
+<div class="figure">
+<img src="2015-11-09-MV-emulating-size-based-models_files/figure-markdown/testing-1.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">summary</span>(<span class="kw">lm</span>(<span class="kw">exp</span>(test_pred$mu)~<span class="dv">0</span>+<span class="kw">as.vector</span>(<span class="kw">t</span>((sim_data_test)))))</code></pre></div>
+<pre><code>## 
+## Call:
+## lm(formula = exp(test_pred$mu) ~ 0 + as.vector(t((sim_data_test))))
+## 
+## Residuals:
+##        Min         1Q     Median         3Q        Max 
+## -1.901e-03 -1.057e-04 -2.660e-06  4.541e-05  2.816e-03 
+## 
+## Coefficients:
+##                               Estimate Std. Error t value Pr(&gt;|t|)    
+## as.vector(t((sim_data_test))) 0.998070   0.001122   889.4   &lt;2e-16 ***
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+## 
+## Residual standard error: 0.0004275 on 459 degrees of freedom
+## Multiple R-squared:  0.9994, Adjusted R-squared:  0.9994 
+## F-statistic: 7.909e+05 on 1 and 459 DF,  p-value: &lt; 2.2e-16</code></pre>
+<h3 id="improving-the-emulator">Improving the emulator</h3>
+<p>It might be possible to get even better prediction by adjusting the length scale of the GP covariances. For this, I use a function to optimise the length scales based on the GP marginal likelihoods, and then define the new emulator by those length scales:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">opt_OPE &lt;-<span class="st"> </span><span class="kw">optim</span>(<span class="kw">c</span>(<span class="dv">1</span>,(scales)),
+      define_OPE,
+      <span class="dt">inData =</span> <span class="kw">stdise</span>(<span class="kw">as.matrix</span>(pred_pre_list)),
+      <span class="dt">outGrid =</span> out_grid,
+      <span class="dt">outData =</span> <span class="kw">stdise</span>(<span class="kw">log</span>(sim_data)),
+      <span class="dt">opt=</span>T,
+      <span class="dt">control =</span> <span class="kw">list</span>(<span class="dt">fnscale=</span>-<span class="dv">1</span>,
+                     <span class="dt">trace =</span> <span class="dv">100</span>,
+                     <span class="dt">reltol =</span> <span class="fl">1e-6</span>))</code></pre></div>
+<p>The new emulator with optimised GP length scales is now:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">OPE_opt &lt;-<span class="st"> </span><span class="kw">define_OPE</span>(opt_OPE$par,
+                      <span class="dt">inData =</span> <span class="kw">stdise</span>(<span class="kw">as.matrix</span>(pred_pre_list)),
+                      <span class="dt">outGrid =</span> out_grid,
+                      <span class="dt">outData =</span> <span class="kw">stdise</span>(<span class="kw">log</span>(sim_data)))
+
+OPE_opt_test &lt;-<span class="st"> </span><span class="kw">adjustOPE</span>(OPE_opt, <span class="dt">R =</span> ins, <span class="dt">Y =</span> outs)
+
+
+test_pred &lt;-<span class="st"> </span><span class="kw">mclapply</span>(ins_test_sp, 
+                      function(ins) <span class="kw">emulate</span>(ins,
+                                            OPE_opt_test,
+                                            <span class="dt">split=</span>F,
+                                            <span class="dt">rev_std_out=</span>T,
+                                            <span class="dt">rev_std_data =</span> <span class="kw">log</span>(sim_data_train)),
+                      <span class="dt">mc.cores =</span> <span class="dv">4</span>)
+
+test_pred &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'rbind'</span>,test_pred)
+
+<span class="kw">plot</span>(<span class="kw">exp</span>(test_pred$mu),<span class="kw">as.vector</span>(<span class="kw">t</span>(sim_data_test)),<span class="dt">xlab=</span><span class="st">'Predictions'</span>,<span class="dt">ylab=</span><span class="st">'Simulations'</span>)
+<span class="kw">abline</span>(<span class="dt">a=</span><span class="dv">0</span>,<span class="dt">b=</span><span class="dv">1</span>)</code></pre></div>
+<div class="figure">
+<img src="2015-11-09-MV-emulating-size-based-models_files/figure-markdown/test%20refined%20OPE-1.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">summary</span>(<span class="kw">lm</span>(<span class="kw">exp</span>(test_pred$mu)~<span class="dv">0</span>+<span class="kw">as.vector</span>(<span class="kw">t</span>(sim_data_test))))</code></pre></div>
+<pre><code>## 
+## Call:
+## lm(formula = exp(test_pred$mu) ~ 0 + as.vector(t(sim_data_test)))
+## 
+## Residuals:
+##        Min         1Q     Median         3Q        Max 
+## -9.959e-04 -1.584e-05  1.600e-06  2.967e-05  9.314e-04 
+## 
+## Coefficients:
+##                              Estimate Std. Error t value Pr(&gt;|t|)    
+## as.vector(t(sim_data_test)) 0.9994168  0.0003502    2854   &lt;2e-16 ***
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+## 
+## Residual standard error: 0.0001334 on 459 degrees of freedom
+## Multiple R-squared:  0.9999, Adjusted R-squared:  0.9999 
+## F-statistic: 8.146e+06 on 1 and 459 DF,  p-value: &lt; 2.2e-16</code></pre>
+<p>Indeed, now 75% of predictions are within <code>quantile(abs((exp(test_pred$mu)-as.vector(t(sim_data_test)))/as.vector(t(sim_data_test)))*100)[4]</code>% of the simulations.</p>
+<h2 id="can-the-emulator-emulate-the-size-spectrum-response">Can the emulator emulate the size-spectrum response?</h2>
+<p>To test the emulator, its worthwhile testing how well the emulator predicts the marginal responses to changes in the inputs:</p>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">in_df &lt;-<span class="st"> </span><span class="kw">data.frame</span>(pred_pre_list)
+
+pred_size &lt;-<span class="st"> </span><span class="dv">8</span>
+
+testset1 &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">h=</span><span class="kw">seq</span>(<span class="kw">min</span>(in_df$h),<span class="kw">max</span>(in_df$h),<span class="dt">l=</span>pred_size),
+                       <span class="dt">r_pp =</span> <span class="dv">10</span>,
+                       <span class="dt">sigma=</span> <span class="fl">1.3</span>)
+
+<span class="kw">test_em</span>(testset1, 
+        OPE_opt, 
+        <span class="st">'h'</span>)</code></pre></div>
+<div class="figure">
+<img src="2015-11-09-MV-emulating-size-based-models_files/figure-markdown/test%20opt_OPT%20response-1.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">testset2 &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">h=</span><span class="dv">40</span>,
+                       <span class="dt">r_pp =</span> <span class="dv">10</span>,
+                       <span class="dt">sigma=</span> <span class="kw">seq</span>(<span class="kw">min</span>(in_df$sigma),<span class="kw">max</span>(in_df$sigma),<span class="dt">l=</span>pred_size))
+
+<span class="kw">test_em</span>(testset2, 
+        OPE_opt, 
+        <span class="st">'sigma'</span>)</code></pre></div>
+<div class="figure">
+<img src="2015-11-09-MV-emulating-size-based-models_files/figure-markdown/test%20opt_OPT%20response-2.png" alt />
+
+</div>
+<div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">testset3 &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">h=</span><span class="dv">40</span>,
+                       <span class="dt">r_pp =</span> <span class="kw">lseq</span>(<span class="kw">quantile</span>(in_df$r_pp,<span class="fl">0.05</span>),<span class="kw">quantile</span>(in_df$r_pp,<span class="fl">0.95</span>),<span class="dt">l=</span>pred_size),
+                       <span class="dt">sigma=</span> <span class="fl">1.3</span>)
+
+<span class="kw">test_em</span>(testset3, 
+        OPE_opt, 
+        <span class="st">'r_pp'</span>)</code></pre></div>
+<div class="figure">
+<img src="2015-11-09-MV-emulating-size-based-models_files/figure-markdown/test%20opt_OPT%20response-3.png" alt />
+
+</div>
+<p>This looks pretty promising! Especially given a big caveats here: the parameter sets over which these marginal responses were estimated may not all be plausible. However, I also removed some implausible inputs further up to improve model fits in relevant regions - so I cheated a bit. But all in all this looks like a promising way forward, and I will follow this up with a more elaborate example of emulation and history matching next.</p>
 <h2 id="references">References</h2>
 <p><br></p>
 <div id="references" class="references">
+<div id="ref-andrianakis:bayesian:2015">
+<p>Andrianakis, I., I. R. Vernon, N. McCreesh, T. J. McKinley, J. E. Oakley, R. N. Nsubuga, M. Goldstein, and R. G. White. 2015. Bayesian History Matching of Complex Infectious Disease Models Using Emulation: A Tutorial and a Case Study on HIV in Uganda. PLoS Comput Biol 11:e1003968.</p>
+</div>
 <div id="ref-kennedy:2001:bayesian">
 <p>Kennedy, M. C., and A. O’Hagan. 2001. Bayesian calibration of computer models. Journal of the Royal Statistical Society. Series B, Statistical Methodology:425–464.</p>
 </div>
