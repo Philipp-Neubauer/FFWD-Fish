@@ -39,8 +39,8 @@
 
 <h1 id="emulating-trait-based-models-2-a-more-serious-attempt">Emulating trait-based models 2: a more serious attempt</h1>
 <p>In a <a href="2015-05-05-emulation_using_GPs.html">previous try</a>, I played with history matching, a method for fitting complex computer simulation models to data <span class="citation">(Kennedy and O’Hagan 2001)</span>. My first try (hack?) was a rather naive attempt to understand how history matching works in general, and to get an idea of its usefulness for fitting size-spectra to data. But I didn't really make a serious attempt at going through a history matching exercise that might produce useful insights into possible parameter values of uncertain size-spectrum parameters.</p>
-<p>So for this try I will make a more serious attempt at fitting statistical models to emulate trait based simulation models with multivariate outputs (e.g., species biomass levels). I will start with a very corse evaluation of plausible parameter spaces, before building the emulator within that space. Due to the massive non-linarities in the size-spectra, a more loose approach of building an emulator over a large parameter space leads to poor emulation.</p>
-<p>One thing that did become clear in the first round of history matching was that univariate emulators are very inefficient. In this post, I will try more efficient multi-variate emulators that are based on assumption of separability of input and output variances <span class="citation">(Rougier 2008)</span>. I will also more explicitly query if the emulator makes reasonable predictions away from data, which is be crucial if this type of method is to work for ecosystem models and provide a path towards fitting these models to data.</p>
+<p>So for this try I will make a more serious attempt at fitting statistical models to emulate trait based simulation models with multivariate outputs (e.g., species biomass levels). I will start with a very coarse evaluation of plausible parameter spaces, before building the emulator within that space. Due to the massive non-linearities in the size-spectra, a more loose approach of building an emulator over a large parameter space leads to poor emulation.</p>
+<p>One thing that did become clear in the first round of history matching was that uni-variate emulators are very inefficient. In this post, I will try more efficient multi-variate emulators that are based on assumption of separability of input and output variances <span class="citation">(Rougier 2008)</span>. I will also more explicitly query if the emulator makes reasonable predictions away from data, which is be crucial if this type of method is to work for ecosystem models and provide a path towards fitting these models to data.</p>
 <h2 id="setting-up-a-trait-based-model">Setting up a trait based model</h2>
 <p>I will use the mizer package to set up a trait based model, and estimate its (active) parameters. The mizer vignette provides a convenient reminder how to set this up:</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">no_sp =<span class="st"> </span><span class="dv">10</span>
@@ -69,7 +69,7 @@ sim &lt;-<span class="st"> </span><span class="kw">project</span>(truth, <span c
 <p>Looks like this arbitrary trait based model has converged to a stable solution. I now use the mean biomass over the last 25 years as data for the calibration (though I could use just the last year, or some other variables).</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">biom &lt;-<span class="st"> </span><span class="kw">colMeans</span>(<span class="kw">getBiomass</span>(sim)[<span class="dv">75</span>:<span class="dv">100</span>,])</code></pre></div>
 <h2 id="building-an-emulator">Building an emulator</h2>
-<p>In this example, I chose to use just three ecologocal parameters (h - the maximum food intake rate, sigma - the width of the prey selection kernel and r_pp - the primary productivity) as unknowns, keeping all other parameters fixed to provide a tractable start. Some inital exploration with the trait based model suggested that these variables had disproportionate effects - although other vairables such as k0 - the multiplyer on maximum recruitment - and beta (the mean of the prey selection kernel) should be considered uncertain in the future. Futhermore, some parameters, such as h and k0 may well vay among species, so could be considered as on a per-species basis in the future. But for now, I focus on the three parameters above to see if I can get a workable example. Here's a start, making a first set of training data for the emulator by running the size-based model on a grid of parameter values.:</p>
+<p>In this example, I chose to use just three ecological parameters (h - the maximum food intake rate, sigma - the width of the prey selection kernel and r_pp - the primary productivity) as unknowns, keeping all other parameters fixed to provide a tractable start. Some initial exploration with the trait based model suggested that these variables had disproportionate effects - although other variables such as k0 - the multiplier on maximum recruitment - and beta (the mean of the prey selection kernel) should be considered uncertain in the future. Furthermore, some parameters, such as h and k0 may well cay among species, so could be considered as on a per-species basis in the future. But for now, I focus on the three parameters above to see if I can get a workable example. Here's a start, making a first set of training data for the emulator by running the size-based model on a grid of parameter values.:</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">minmax &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span class="dt">h =</span> <span class="kw">c</span>(<span class="dv">3</span>,<span class="dv">150</span>),
                      <span class="dt">r_pp =</span> <span class="kw">c</span>(<span class="fl">0.005</span>,<span class="dv">100</span>),
                      <span class="dt">sigma =</span> <span class="kw">c</span>(<span class="fl">0.5</span>,<span class="dv">4</span>))
@@ -92,15 +92,15 @@ LHC_in &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span cl
 <pre><code>##     user   system  elapsed 
 ## 3605.216   23.464 1402.426</code></pre>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">sim_data &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'rbind'</span>,simdat)</code></pre></div>
-<p>Here I chose to right away get rid of some regions of parameter space (i.e., calculate the implausibility <span class="citation">(Andrianakis et al. 2015)</span> based on simulation runs alone.). Since I do not use an emulator here, and the simulations are deterministic, I need to consider model uncertainty as the main source of uncertainty. Model uncertainty is the uncertainty due to model mis-specification and is notoriously hard to pin down. Here I set it very conservatively to half the variance of the simualtion outputs over a wide range of input parameters. This should ensure that I only disccard parameter values that produce really absurd outputs (i.e., extinction of some species). For a more detailed intro to Implausibility and its application in the analysis of simulation outputs, see <span class="citation">(Andrianakis et al. 2015)</span>.</p>
+<p>Here I chose to right away get rid of some regions of parameter space (i.e., calculate the implausibility <span class="citation">(Andrianakis et al. 2015)</span> based on simulation runs alone.). Since I do not use an emulator here, and the simulations are deterministic, I need to consider model uncertainty as the main source of uncertainty. Model uncertainty is the uncertainty due to model mis-specification and is notoriously hard to pin down. Here I set it very conservatively to a third of the variance of the simulation outputs over a wide range of input parameters. This should ensure that I only discard parameter values that produce really absurd outputs (i.e., extinction of some species). the implausibility theshold is set at 10, which is the approximate value for a Chi-squared dsitribution with 10 degrees of freedom. For a more detailed intro to Implausibility and its application in the analysis of simulation outputs, see <span class="citation">Andrianakis et al. (2015)</span> and references therein.</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="co">#naset &lt;- which(apply(sim_data,1,function(x) any(is.na(x))))</span>
 <span class="co">#sim_data &lt;- sim_data[-naset,]</span>
 
 LHC_in$p_reg  &lt;-<span class="st"> </span><span class="kw">apply</span>(sim_data,<span class="dv">1</span>,function(pred){
   <span class="kw">t</span>(biom -<span class="st"> </span>pred) %*%<span class="st"> </span>
-<span class="st">    </span><span class="kw">solve</span>(<span class="fl">0.5</span>*<span class="kw">var</span>(sim_data)) %*%<span class="st"> </span>
+<span class="st">    </span><span class="kw">solve</span>(<span class="kw">var</span>(sim_data)/<span class="dv">4</span>) %*%<span class="st"> </span>
 <span class="st">    </span>(biom -<span class="st"> </span>pred)
-})&gt;<span class="dv">3</span>
+})&gt;<span class="dv">18</span>
 
 mpreds &lt;-<span class="st"> </span>reshape2::<span class="kw">melt</span>(LHC_in)
 
@@ -109,9 +109,13 @@ mpreds &lt;-<span class="st"> </span>reshape2::<span class="kw">melt</span>(LHC_
 <span class="st">  </span><span class="kw">geom_bar</span>(<span class="kw">aes</span>(<span class="dt">x=</span>value)) +<span class="st"> </span>
 <span class="st">  </span><span class="kw">theme_bw</span>() +<span class="st"> </span>
 <span class="st">  </span><span class="kw">xlab</span>(<span class="st">'Parameter'</span>)</code></pre></div>
-<p><img src="2015-11-09-MV-emulating-size-based-models_files/figure-markdown/check%20first%20outputs,%20Wave%200%20of%20checking%20for%20predictions%20that%20are%20wayy%20off-1.png" alt /> I now use the remaining points that were not discarted (there aren't many!) to define a set of point to build the emulator on. This avoids training the emulator on a set of parameters and outputs that give widely different answers and dominate the model fit, but lead to poor predictions in the area of interest (i.e., parameters taht make sense). The new set is made by drawing from a multivariate normal distribution around the remaining points to explore the space around those points.</p>
+<div class="figure">
+<img src="2015-11-09-MV-emulating-size-based-models_files/figure-markdown/check%20first%20outputs,%20Wave%200%20of%20checking%20for%20predictions%20that%20are%20wayy%20off-1.png" alt />
+
+</div>
+<p>I now use the remaining points that were not discarded (there aren't many!) to define a set of point to build the emulator on. This avoids training the emulator on a set of parameters and outputs that give widely different answers and dominate the model fit, but lead to poor predictions in the area of interest (i.e., parameters that make sense). The new set is made by drawing from a multivariate normal distribution around the remaining points to explore the space around those points.</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">leftovers &lt;-<span class="st"> </span>LHC_in[!LHC_in$p_reg,<span class="dv">1</span>:<span class="dv">3</span>]
-oc =<span class="st"> </span><span class="dv">500</span>/<span class="kw">nrow</span>(leftovers)
+oc =<span class="st"> </span><span class="kw">round</span>(<span class="dv">500</span>/<span class="kw">nrow</span>(leftovers))
 isd &lt;-<span class="st"> </span><span class="kw">cov</span>(leftovers)
 
 <span class="co"># draw from mv norm around leftover values</span>
@@ -140,23 +144,23 @@ mp &lt;-<span class="st"> </span>reshape2::<span class="kw">melt</span>(new_pred
                                               run_SS_sim,
                                               <span class="dt">mc.cores =</span> <span class="dv">4</span>))</code></pre></div>
 <pre><code>##     user   system  elapsed 
-## 7823.918   47.031 2808.049</code></pre>
-<p>I throw out some combinations of parameters that lead to collapse. In a full hitory matching excersise I wouldn't want to do this since they hold information about areas of poor fit to the data - but here I use it to show that the emulator can indeed give ok (and fast!) predictions of the size spectrum in the parameter space of interest.</p>
+## 8155.927   61.125 3178.952</code></pre>
+<p>I throw out some combinations of parameters that lead to collapse. In a full history matching exerciser I wouldn't want to do this since they hold information about areas of poor fit to the data - but here I use it to show that the emulator can indeed give OK (and fast!) predictions of the size spectrum in the parameter space of interest.</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">new_sim_data &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span class="st">'rbind'</span>,new_simdat)
 
 <span class="kw">apply</span>(new_sim_data,<span class="dv">2</span>,quantile)</code></pre></div>
-<pre><code>##                 1            2            3            4           5
-## 0%   1.214603e-14 2.389684e-16 3.125777e-11 5.591015e-05 0.000110483
-## 25%  3.968203e-02 2.823006e-02 1.826962e-02 1.045243e-02 0.005940404
-## 50%  4.074494e-02 3.015760e-02 1.950100e-02 1.137221e-02 0.006557648
-## 75%  4.286972e-02 3.103498e-02 2.085808e-02 1.235430e-02 0.007204991
-## 100% 9.137295e-02 3.406246e-02 2.378123e-02 1.488946e-02 0.009529195
+<pre><code>##               1            2            3            4            5
+## 0%   0.02623961 3.014166e-18 1.690778e-06 3.577906e-16 1.337676e-11
+## 25%  0.04066894 2.982046e-02 2.018920e-02 1.259627e-02 7.494951e-03
+## 50%  0.04473751 3.178591e-02 2.264478e-02 1.573578e-02 1.020695e-02
+## 75%  0.05080083 3.516367e-02 2.509736e-02 1.768273e-02 1.266223e-02
+## 100% 0.06548712 4.533041e-02 3.276044e-02 2.454326e-02 1.885972e-02
 ##                 6            7            8            9           10
-## 0%   9.371776e-05 2.482895e-06 1.267268e-06 1.479355e-06 1.794694e-08
-## 25%  3.396647e-03 2.186649e-03 1.288443e-03 7.544060e-04 3.859230e-04
-## 50%  3.764519e-03 2.412484e-03 1.419151e-03 8.144193e-04 4.093707e-04
-## 75%  4.192701e-03 2.697608e-03 1.565078e-03 8.801683e-04 4.429484e-04
-## 100% 5.776116e-03 3.436912e-03 1.965239e-03 1.095945e-03 5.468055e-04</code></pre>
+## 0%   2.021669e-08 1.115931e-08 1.221133e-08 6.819790e-09 3.433630e-09
+## 25%  4.308016e-03 2.615995e-03 1.478547e-03 8.508476e-04 4.471478e-04
+## 50%  6.254554e-03 3.755085e-03 2.087824e-03 1.166121e-03 5.963557e-04
+## 75%  8.439304e-03 5.433474e-03 3.117022e-03 1.752072e-03 9.151875e-04
+## 100% 1.436430e-02 1.037388e-02 6.870761e-03 4.196598e-03 2.361536e-03</code></pre>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">pred_pre_list_df &lt;-<span class="st"> </span><span class="kw">data.frame</span>(new_pred_pre_list_jitter)
 pred_pre_list_df$p_reg &lt;-<span class="st"> </span><span class="kw">apply</span>(new_sim_data,<span class="dv">1</span>,function(x) <span class="kw">any</span>(x&lt;(<span class="kw">min</span>(biom)/<span class="dv">10</span>^<span class="dv">4</span>)))
 
@@ -187,7 +191,7 @@ pred_pre_list &lt;-<span class="st"> </span><span class="kw">unique</span>(new_p
 <p>Time to think about how to emulate this model. In general, species are linked in the model, so uni-variate emulation seems like the wrong approach. An alternative is multivariate emulation. In particular, the method described in <span class="citation">Rougier (2008)</span> may be appropriate here since we are working with a standard matrix of outputs. The method assumes that the predictions can be decomposed into a regression in the inputs and a regression in the outputs (i.e., the size classes).</p>
 <p>First, source Johnathan Rougiers code:</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r"><span class="kw">source</span>(<span class="st">&quot;include/GP_emulators/OPE.R&quot;</span>)</code></pre></div>
-<p>For the method to work, we need to specify regressors on the inputs and outputs, along with a covariance, computed from the inputs and at points where the simulator is evaluated (i.e., where we calculate the biomass - at w_inf for each species). I use the same for inputs and outptus here as I have little prior idea. For the mean part of the GP regression, a second order polynomial seems like a relatively flexible start. Tor the covariance, I will start with an exponential covariance for simplicity. Later, I will try to learn the scale parameters of both matrices in order to optimise the emulator. The functions for emans, variances and otehr helper fucntions are defined <a href="2015-11-09-MV-emulating-size-based-models_files/helper_funcs.R">here</a></p>
+<p>For the method to work, we need to specify regressors on the inputs and outputs, along with a covariance, computed from the inputs and at points where the simulator is evaluated (i.e., where we calculate the biomass - at w_inf for each species). I use the same for inputs and outputs here as I have little prior idea. For the mean part of the GP regression, a second order polynomial seems like a relatively flexible start. Tor the covariance, I will start with an exponential covariance for simplicity. Later, I will try to learn the scale parameters of both matrices in order to optimise the emulator. The functions for means, variances and other helper functions are defined <a href="2015-11-09-MV-emulating-size-based-models_files/helper_funcs.R">here</a></p>
 <p>I can now define a GP emulator:</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">  <span class="co"># stdise is a normal centering and fixing to [-1,1], whereas stdise_wrt(x,y) is with respect to the mean and max of y </span>
 
@@ -234,17 +238,17 @@ test_pred &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span cl
 ## 
 ## Residuals:
 ##        Min         1Q     Median         3Q        Max 
-## -1.901e-03 -1.057e-04 -2.660e-06  4.541e-05  2.816e-03 
+## -0.0050637 -0.0003211 -0.0000239  0.0003372  0.0063478 
 ## 
 ## Coefficients:
 ##                               Estimate Std. Error t value Pr(&gt;|t|)    
-## as.vector(t((sim_data_test))) 0.998070   0.001122   889.4   &lt;2e-16 ***
+## as.vector(t((sim_data_test))) 1.005866   0.002592     388   &lt;2e-16 ***
 ## ---
 ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 ## 
-## Residual standard error: 0.0004275 on 459 degrees of freedom
-## Multiple R-squared:  0.9994,	Adjusted R-squared:  0.9994 
-## F-statistic: 7.909e+05 on 1 and 459 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 0.001145 on 479 degrees of freedom
+## Multiple R-squared:  0.9968,	Adjusted R-squared:  0.9968 
+## F-statistic: 1.505e+05 on 1 and 479 DF,  p-value: &lt; 2.2e-16</code></pre>
 <h3 id="improving-the-emulator">Improving the emulator</h3>
 <p>It might be possible to get even better prediction by adjusting the length scale of the GP covariances. For this, I use a function to optimise the length scales based on the GP marginal likelihoods, and then define the new emulator by those length scales:</p>
 <div class="sourceCode"><pre class="sourceCode r"><code class="sourceCode r">opt_OPE &lt;-<span class="st"> </span><span class="kw">optim</span>(<span class="kw">c</span>(<span class="dv">1</span>,(scales)),
@@ -288,17 +292,17 @@ test_pred &lt;-<span class="st"> </span><span class="kw">do.call</span>(<span cl
 ## 
 ## Residuals:
 ##        Min         1Q     Median         3Q        Max 
-## -9.959e-04 -1.584e-05  1.600e-06  2.967e-05  9.314e-04 
+## -0.0026919 -0.0001583 -0.0000180  0.0000440  0.0049725 
 ## 
 ## Coefficients:
-##                              Estimate Std. Error t value Pr(&gt;|t|)    
-## as.vector(t(sim_data_test)) 0.9994168  0.0003502    2854   &lt;2e-16 ***
+##                             Estimate Std. Error t value Pr(&gt;|t|)    
+## as.vector(t(sim_data_test)) 1.002935   0.001517   661.3   &lt;2e-16 ***
 ## ---
 ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 ## 
-## Residual standard error: 0.0001334 on 459 degrees of freedom
-## Multiple R-squared:  0.9999,	Adjusted R-squared:  0.9999 
-## F-statistic: 8.146e+06 on 1 and 459 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 0.0006698 on 479 degrees of freedom
+## Multiple R-squared:  0.9989,	Adjusted R-squared:  0.9989 
+## F-statistic: 4.373e+05 on 1 and 479 DF,  p-value: &lt; 2.2e-16</code></pre>
 <p>Indeed, now 75% of predictions are within <code>quantile(abs((exp(test_pred$mu)-as.vector(t(sim_data_test)))/as.vector(t(sim_data_test)))*100)[4]</code>% of the simulations.</p>
 <h2 id="can-the-emulator-emulate-the-size-spectrum-response">Can the emulator emulate the size-spectrum response?</h2>
 <p>To test the emulator, its worthwhile testing how well the emulator predicts the marginal responses to changes in the inputs:</p>
@@ -339,7 +343,7 @@ testset1 &lt;-<span class="st"> </span><span class="kw">data.frame</span>(<span 
 <img src="2015-11-09-MV-emulating-size-based-models_files/figure-markdown/test%20opt_OPT%20response-3.png" alt />
 
 </div>
-<p>This looks pretty promising! Especailly given a big caveats here: the parameter sets over which these marginal responses were estiamted may not all be plausible, and I removed implausible inputs further up. So all in all this looks like a promising way forward.</p>
+<p>This looks pretty promising! Especially given a big caveats here: the parameter sets over which these marginal responses were estimated may not all be plausible. However, I also removed some implausible inputs further up to improve model fits in relevant regions - so I cheated a bit. But all in all this looks like a promising way forward, and I will follow this up with a more elaborate example of emulation and history matching next.</p>
 <h2 id="references">References</h2>
 <p><br></p>
 <div id="references" class="references">
